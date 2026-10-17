@@ -388,6 +388,12 @@ func (p *powConsensus) Run(ctx context.Context, h core.ConsensusHost) (returnErr
 				defer stop()
 				b, r, e := p.Builder.Build(mc, head)
 				if e == nil {
+					b, e = p.Protocol.Seal(mc, b)
+					if e == nil {
+						r.BlockID = b.ID()
+					}
+				}
+				if e == nil {
 					p.mu.Lock()
 					current, err := p.Ledger.Head(run)
 					if err != nil {

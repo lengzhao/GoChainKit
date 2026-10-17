@@ -1,0 +1,46 @@
+# Development rule-level PoW × account model. Distinct nodes need distinct local paths/ports.
+root: node
+plugins:
+  model:
+    use: model/account
+    config: {Network: composed-account}
+  rule:
+    use: rules/pow
+    config: {retargetInterval: 20, targetSpacing: 10, initialReward: 50, halvingInterval: 100}
+  protocol:
+    use: protocol/composed-pow
+    config: {network: composed-account, genesisTime: 1700000000, producer: '0300000000000000000000000000000000000000000000000000000000000000'}
+    deps: {model: model, rule: rule, choice: rule}
+  ledger:
+    use: storage/bolt
+    config: {path: data/pow-account-chain.db}
+    deps: {protocol: protocol}
+  pool:
+    use: mempool/memory
+    config: {maxTransactions: 1000, maxBytes: 16777216}
+    deps: {protocol: protocol}
+  executor:
+    use: executor/composed
+    deps: {protocol: protocol, history: ledger}
+  selector:
+    use: selector/fifo
+    deps: {protocol: protocol}
+  builder:
+    use: builder/basic
+    config: {maxTransactionBytes: 1048576}
+    deps: {protocol: protocol, ledger: ledger, pool: pool, executor: executor, selector: selector}
+  host:
+    use: node/coordinator
+    deps: {protocol: protocol, ledger: ledger, builder: builder, executor: executor, pool: pool}
+  network:
+    use: network/libp2p
+    config: {identityPath: data/pow-account-peer.key, listen: [/ip4/127.0.0.1/tcp/19101], seeds: []}
+    deps: {protocol: protocol}
+  consensus:
+    use: consensus/pow
+    config: {interval: 1s, syncInterval: 500ms}
+    deps: {protocol: protocol, ledger: ledger, builder: builder, executor: executor, pool: pool, network: network}
+  node:
+    use: node/default
+    config: {shutdownTimeout: 5s}
+    deps: {ledger: ledger, host: host, consensus: consensus, resources: [network]}
