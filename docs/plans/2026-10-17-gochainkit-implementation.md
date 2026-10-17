@@ -10,6 +10,8 @@
 
 **当前执行状态：** [编程与模块接口规范](../development-conventions.md) 已通过用户评审，代码实现恢复。首批范围为公共协议基础、接口草案和内存交易池；完整区块编码、解码及持久化闭环仍待后续实现。不得将本批报告为最小链已完成。
 
+**后续优先级调整：** 用户要求先做出块。已增加构块、单节点共识、提交协调器、最小 KV 执行器与内存链存储，通过真实插件装配及出块集成测试。参见 [单节点内存出块](../block-production.md)。接下来优先补事务持久化和恢复；独立节点生命周期、完整网络解码与 HTTP API 仍未完成。
+
 ## 已核对的上游依据
 
 本机缓存的 PluginKit v0.1.6 源码提供 `build.Build[T](ctx, graph, rootID)`、`build.RequireByID[T]`。AgentKit 通过 `pluginkit.Register(kind, New)` 注册构造函数，配置指定实例与 deps。PluginKit v0.1.6 要求 Go 1.26.1，本机版本匹配。

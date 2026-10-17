@@ -39,6 +39,9 @@ type Mempool interface {
 // missing keys using ErrNotFound. Its owner releases the snapshot with Close.
 type StateReader interface {
 	Get(context.Context, []byte) ([]byte, error)
+	// Entries returns a caller-owned full snapshot for the minimal state-root
+	// algorithm. Production backends may later replace this with bounded iteration.
+	Entries(context.Context) (map[string][]byte, error)
 	Root() types.Hash
 	Close() error
 }
