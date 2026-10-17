@@ -78,3 +78,7 @@ Ledger 汇总读、状态与原子提交能力；LedgerIdentity 是进程内账�
 TransactionError 必须指明当前候选中的交易 ID 和 Rejected/Deferred。构块器有限次重建候选，Rejected 驱逐、Deferred 本轮跳过但保留；无效错误分类或内部错误直接上报。单节点共识对 ErrNoProposal、ErrConflict 重试；CommittedError 表示已提交、清理失败，不能作为未提交重试。
 
 交易选择是独立子插件；状态树、虚拟机、网络与分布式共识保留替换方向，当前没有对应生产实现。
+
+## 可选工作量与分支能力
+
+WorkProtocol 提供 Parent、Work 和 Seal；BranchLedger.Import 保存已验证的分支并返回主链切换中的 Attached/Detached。通用 Protocol 与 Block 不因此要求 PoW 字段，原单节点 KV 组合继续可用。Network 仅提供有界通信与生命周期能力，不暴露 libp2p 的 host/peer 类型。

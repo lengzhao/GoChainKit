@@ -1,0 +1,39 @@
+# Development-only low-difficulty PoW chain. Relative database paths use the process cwd.
+root: node
+plugins:
+  protocol:
+    use: protocol/powkv
+    config: {chainID: dev}
+  ledger:
+    use: storage/bolt
+    config: {path: data/pow-chain.db}
+    deps: {protocol: protocol}
+  pool:
+    use: mempool/memory
+    config: {maxTransactions: 1000, maxBytes: 16777216}
+    deps: {protocol: protocol}
+  executor:
+    use: executor/powkv
+    deps: {protocol: protocol}
+  selector:
+    use: selector/fifo
+    deps: {protocol: protocol}
+  builder:
+    use: builder/basic
+    config: {maxTransactionBytes: 1572864}
+    deps: {protocol: protocol, ledger: ledger, pool: pool, executor: executor, selector: selector}
+  host:
+    use: node/coordinator
+    deps: {protocol: protocol, ledger: ledger, builder: builder, executor: executor, pool: pool}
+  network:
+    use: network/libp2p
+    config: {identityPath: data/pow-peer.key, listen: [/ip4/127.0.0.1/tcp/19001], seeds: []}
+    deps: {protocol: protocol}
+  consensus:
+    use: consensus/pow
+    config: {interval: 1s, syncInterval: 500ms}
+    deps: {protocol: protocol, ledger: ledger, builder: builder, executor: executor, pool: pool, network: network}
+  node:
+    use: node/default
+    config: {shutdownTimeout: 5s}
+    deps: {ledger: ledger, host: host, consensus: consensus, resources: [network]}

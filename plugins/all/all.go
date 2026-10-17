@@ -7,6 +7,7 @@ import (
 	_ "github.com/lengzhao/GoChainKit/plugins/consensus"
 	_ "github.com/lengzhao/GoChainKit/plugins/executor"
 	_ "github.com/lengzhao/GoChainKit/plugins/mempool"
+	_ "github.com/lengzhao/GoChainKit/plugins/network"
 	_ "github.com/lengzhao/GoChainKit/plugins/node"
 	_ "github.com/lengzhao/GoChainKit/plugins/protocol"
 	_ "github.com/lengzhao/GoChainKit/plugins/selector"

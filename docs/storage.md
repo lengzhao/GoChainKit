@@ -52,3 +52,9 @@ go test ./tests/integration -run TestPersistentProductionGraph -v
 第一版每块保存完整状态快照，用于小规模验证。后续应根据数据规模设计增量状态、历史裁剪与兼容迁移，而不是把当前布局作为高吞吐链的最终存储设计。
 
 事务行为参考 [bbolt 官方说明](https://github.com/etcd-io/bbolt#transactions)。进程退出测试验证软件提交边界，不模拟硬件故障或所有文件系统异常。
+
+## 可选 PoW 分支存储
+
+绑定 WorkProtocol 时，内存与 Bolt 后端提供 BranchLedger.Import。分支保留各自执行结果和快照；只有累计工作量严格更大时切换主链，并在同一原子操作中重建确认交易、回执索引和链头。同权不切换。Bolt 重开时重验已保存分支、累计工作量、最重链选择与索引一致性；原线性 KV 账本行为保持独立。
+
+当前实现为开发规模的完整快照及分支图，长期分支回收、修剪和大链性能尚未优化。

@@ -2,7 +2,7 @@
 
 基于 Go 和 PluginKit 的模块化区块链开发框架，目标是通过配置装配模块，快速构建一条新链。
 
-当前支持配置驱动的独立节点 CLI、单节点出块、事务落盘与重开恢复。默认共识仅供开发，不提供多节点一致性。
+当前支持配置驱动的独立节点 CLI、单节点出块、事务落盘与重开恢复。内置 single 与简化 PoW 两种开发共识；PoW 可通过 libp2p 组成多节点开发网络。
 
 ## 已实现
 
@@ -13,6 +13,8 @@
 - 构块插件、单节点定时共识和提交协调器。
 - 最小键值执行器、内存状态/区块/回执存储，支持链头推进。
 - 真实插件图装配与出块集成测试。
+- 可选 PoW 协议、分支存储与累计工作量选链，支持原子重组及重开恢复。
+- libp2p 网络：持久身份、种子重连、有界消息及协议/创世隔离。
 - bbolt 持久化插件：区块、状态、已确认交易、回执和链头在同一事务落盘，支持重开恢复。
 
 ## 开发
@@ -33,6 +35,7 @@ go test ./tests/integration -v
 - [实现计划](docs/plans/2026-10-17-gochainkit-implementation.md)
 - [持久化存储](docs/storage.md)
 - [模块与协议接口](docs/interfaces.md)
+- [libp2p 与 PoW 开发网络](docs/network-consensus.md)
 - [架构评估与下一步建议](docs/architecture-review.md)
 
 后续按需求补充 HTTP API，并扩展持久化压力与兼容性验证。
@@ -50,3 +53,11 @@ go run ./cmd/gochainkit --config presets/single.yaml --run-for 5s
 ```
 
 默认配置通过 PluginKit 共享一个 Ledger，根 node/default 负责账本与资源的启动、回滚、关闭和共识任务监督。重复启动命令会打开原账本并继续出块；此版本尚无外部交易提交 API。自定义程序可自行选择插件包，不必导入全部内置实现。详见 [节点运行](docs/node-runtime.md)。
+
+## PoW 开发网络
+
+```sh
+go run ./cmd/gochainkit --config presets/pow.yaml
+```
+
+启动后打印可用于种子连接的完整节点地址。为其他节点复制配置，使用独立数据目录、身份文件和监听端口，并将该地址加入 network 的 seeds。设置共识配置 mining: false 可只同步不挖矿。详见 [网络操作与验证边界](docs/network-consensus.md)。

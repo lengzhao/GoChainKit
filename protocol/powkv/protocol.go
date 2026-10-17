@@ -394,16 +394,22 @@ func (p *protocol) Seal(ctx context.Context, b core.Block) (core.Block, error) {
 		return nil, err
 	}
 	v.Nonce = binary.BigEndian.Uint64(seed[:])
+	// Transaction/body commitments are invariant during nonce search. Hash the
+	// validated header once rather than rehash and verify a maximal transaction
+	// for every nonce attempt.
+	base, e := (kv.Block{Header: v.Header, Transactions: v.Transactions}).ID()
+	if e != nil {
+		return nil, e
+	}
+	prefix := append([]byte("gochainkit/powkv/block/v1\x00"), base[:]...)
 	for {
 		if e = ctx.Err(); e != nil {
 			return nil, e
 		}
-		out, e := WrapBlock(v)
-		if e != nil {
-			return nil, e
-		}
-		if out.ID()[0] == 0 {
-			return out, nil
+		data := binary.BigEndian.AppendUint64(prefix[:len(prefix):len(prefix)], v.Nonce)
+		candidate := sha256.Sum256(data)
+		if candidate[0] == 0 {
+			return WrapBlock(v)
 		}
 		if v.Nonce == math.MaxUint64 {
 			return nil, fmt.Errorf("nonce exhausted")

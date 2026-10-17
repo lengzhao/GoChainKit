@@ -29,6 +29,18 @@ func TestSealedRoundTripAndCommitments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	raw, err := UnwrapBlock(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawID, err := raw.ID()
+	if err != nil || core.ID(string(rawID[:])) != b.ID() {
+		t.Fatal("optimized seal hash differs from canonical Block.ID", err)
+	}
+	again, err := p.Seal(ctx, b)
+	if err != nil || again.ID() != b.ID() {
+		t.Fatal("sealing valid proof changed identity", err)
+	}
 	w, err := p.Work(b)
 	if err != nil || w.Int64() != 256 {
 		t.Fatal(w, err)

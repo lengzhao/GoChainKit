@@ -20,7 +20,7 @@ plugins:
     deps: {protocol: protocol}
   builder:
     use: builder/basic
-    config: {maxTransactionBytes: 1048576}
+    config: {maxTransactionBytes: 1572864}
     deps: {protocol: protocol, ledger: ledger, pool: pool, executor: executor, selector: selector}
   host:
     use: node/coordinator

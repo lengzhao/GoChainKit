@@ -24,3 +24,14 @@ Files: plugins/consensus/pow.go、tests/integration/pow_network_test.go、preset
 README、docs/network-consensus.md：说明配置、操作、格式兼容性和开发范围；全仓 go test -race ./...、go vet ./...、gofmt及真实CLI多进程启动验证。审查所有未解决项，最终本地提交；不自动合并主分支。
 
 所有Go检查使用 env GOTOOLCHAIN=local GOCACHE=/private/tmp/gochainkit-cache /opt/homebrew/bin/go。
+
+## 执行记录
+
+- Task 1：PoW 协议与内存/Bolt 分支账本已实现，规格和质量审查通过，相关 race 测试通过；本地提交 b456925。
+- Task 2：真实 libp2p 传输、原子持久身份和双向资源预算已实现，规格和质量审查通过，真实双节点 race 测试通过；本地提交 3bf92ad。
+- Task 3：分页追赶、重组、重启、自动矿工、最大交易传播与停机故障监督均完成，两阶段审查与真实网络 race 验证通过。
+- Task 4：操作文档、CLI地址输出、最终全仓 race / vet / gofmt / diff 检查均通过；两个独立 CLI 矿工运行后，从磁盘重开为观察节点，经种子连接追赶到相同链头和状态根。整体范围核对后收尾提交。
+
+## 最终验收说明
+
+全仓 race 测试通过，集成部分约 24 秒。真实网络覆盖 35 块较弱分支追赶 70 块主链（首批 32 块不足以切换仍可推进）、三自动矿工竞争、最大合法 1 MiB value 的传播与确认、Bolt 重开与相同 head/Root/Entries。严格更重规则在等权时不强制收敛，测试使用后续 settling block 打破平局。

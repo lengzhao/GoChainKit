@@ -5,10 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"github.com/lengzhao/GoChainKit/assembly"
+	"github.com/lengzhao/GoChainKit/core"
 	_ "github.com/lengzhao/GoChainKit/plugins/all"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 func main() {
@@ -36,9 +38,42 @@ func run() error {
 		return err
 	}
 	defer file.Close()
-	root, _, err := assembly.Load(ctx, file)
+	root, result, err := assembly.Load(ctx, file)
 	if err != nil {
 		return err
 	}
-	return root.Run(ctx)
+	networks := map[string]core.Network{}
+	for _, instance := range result.Instances {
+		if network, ok := instance.Value.(core.Network); ok {
+			networks[instance.ID] = network
+		}
+	}
+	if len(networks) == 0 {
+		return root.Run(ctx)
+	}
+	finished := make(chan error, 1)
+	go func() { finished <- root.Run(ctx) }()
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	var ticks <-chan time.Time = ticker.C
+	for {
+		select {
+		case err := <-finished:
+			return err
+		case <-ticks:
+			for id, network := range networks {
+				addresses := network.Addresses()
+				if len(addresses) > 0 {
+					for _, addr := range addresses {
+						fmt.Fprintln(os.Stdout, "Listening:", addr)
+					}
+					delete(networks, id)
+				}
+			}
+			if len(networks) == 0 {
+				ticker.Stop()
+				ticks = nil
+			}
+		}
+	}
 }
