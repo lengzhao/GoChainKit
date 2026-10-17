@@ -12,6 +12,8 @@
 
 **后续优先级调整：** 用户要求先做出块。已增加构块、单节点共识、提交协调器、最小 KV 执行器与内存链存储，通过真实插件装配及出块集成测试。参见 [单节点内存出块](../block-production.md)。接下来优先补事务持久化和恢复；独立节点生命周期、完整网络解码与 HTTP API 仍未完成。
 
+**持久化进展：** 根据用户要求先保证区块、状态、交易落盘，新增 storage/bolt，实现确认交易索引、同事务保存与重开验证，并覆盖提交前/后进程退出恢复。详见 [持久化存储](../storage.md)。待确认交易池仍为内存实现；不将本阶段报告为完整生产链。
+
 ## 已核对的上游依据
 
 本机缓存的 PluginKit v0.1.6 源码提供 `build.Build[T](ctx, graph, rootID)`、`build.RequireByID[T]`。AgentKit 通过 `pluginkit.Register(kind, New)` 注册构造函数，配置指定实例与 deps。PluginKit v0.1.6 要求 Go 1.26.1，本机版本匹配。

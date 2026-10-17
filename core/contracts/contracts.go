@@ -67,6 +67,12 @@ type ChainStore interface {
 	Receipt(context.Context, types.Hash) (types.Receipt, error)
 }
 
+// TransactionStore is an optional confirmed-transaction index. It returns owned
+// data and ErrNotFound for unknown or unconfirmed IDs; it is not a durable pool.
+type TransactionStore interface {
+	Transaction(context.Context, types.Hash) (types.ConfirmedTransaction, error)
+}
+
 // BlockBuilder constructs an isolated candidate against the supplied head.
 type BlockBuilder interface {
 	Build(context.Context, types.Hash) (types.Block, types.ExecutionResult, error)

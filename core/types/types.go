@@ -154,6 +154,14 @@ type Receipt struct {
 	ErrorCode     string
 }
 
+// ConfirmedTransaction locates an included transaction within its committed block.
+type ConfirmedTransaction struct {
+	Transaction Transaction
+	BlockID     Hash
+	Height      uint64
+	Index       uint64
+}
+
 // ExecutionResult is an isolated proposal. Committers must validate its binding
 // to the parent and block before accepting it, and copy retained slices/maps.
 type ExecutionResult struct {
