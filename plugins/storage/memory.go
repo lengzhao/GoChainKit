@@ -18,6 +18,7 @@ type MemoryStore struct {
 	mu           sync.RWMutex
 	owner        *core.LedgerIdentity
 	p            core.LedgerProtocol
+	branches     map[core.ID]branchNode
 	head         core.ID
 	blocks       map[core.ID][]byte
 	states       map[core.ID]map[string][]byte
@@ -38,7 +39,15 @@ func NewMemory(_ MemoryConfig, d Deps) (*MemoryStore, error) {
 	if e != nil {
 		return nil, e
 	}
-	return &MemoryStore{owner: core.NewLedgerIdentity(), p: d.Protocol, head: g.ID, blocks: map[core.ID][]byte{g.ID: g.Block}, states: map[core.ID]map[string][]byte{g.ID: g.State}, roots: map[core.ID]core.Commitment{g.ID: g.Root}, transactions: map[core.ID]storedTransaction{}, receipts: map[core.ID]core.Receipt{}}, nil
+	store := &MemoryStore{owner: core.NewLedgerIdentity(), p: d.Protocol, head: g.ID, blocks: map[core.ID][]byte{g.ID: g.Block}, states: map[core.ID]map[string][]byte{g.ID: g.State}, roots: map[core.ID]core.Commitment{g.ID: g.Root}, transactions: map[core.ID]storedTransaction{}, receipts: map[core.ID]core.Receipt{}}
+	if p, ok := d.Protocol.(core.WorkProtocol); ok {
+		n, e := branchGenesis(context.Background(), p, g)
+		if e != nil {
+			return nil, e
+		}
+		store.branches = map[core.ID]branchNode{g.ID: n}
+	}
+	return store, nil
 }
 func (s *MemoryStore) Protocol() core.ProtocolDescriptor { return s.p.Protocol() }
 func (s *MemoryStore) Head(ctx context.Context) (core.ID, error) {
@@ -102,6 +111,10 @@ func (s *MemoryStore) Snapshot(ctx context.Context, id core.ID) (core.StateReade
 	return &stateSnapshot{State: copyState(state), Commitment: s.roots[id]}, nil
 }
 func (s *MemoryStore) Commit(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) error {
+	if _, ok := s.p.(core.WorkProtocol); ok {
+		_, e := s.importBlock(ctx, parent, b, r, true)
+		return e
+	}
 	if b == nil {
 		return fmt.Errorf("nil block")
 	}

@@ -106,6 +106,14 @@ func (s *BoltStore) Start(ctx context.Context) (err error) {
 		return e
 	}
 	desc := s.p.Protocol()
+	var genesisBranch branchNode
+	wp, isWork := s.p.(core.WorkProtocol)
+	if isWork {
+		genesisBranch, e = branchGenesis(ctx, wp, g)
+		if e != nil {
+			return e
+		}
+	}
 	if e = os.MkdirAll(filepath.Dir(s.cfg.Path), 0700); e != nil {
 		return e
 	}
@@ -144,6 +152,9 @@ func (s *BoltStore) Start(ctx context.Context) (err error) {
 			if genesisID != g.ID || genesisRoot != g.Root || !bytes.Equal(genesisBytes, g.Block) {
 				return fmt.Errorf("database genesis mismatch")
 			}
+			if isWork && tx.Bucket([]byte("branches")) == nil {
+				return fmt.Errorf("missing branch metadata")
+			}
 			for _, b := range buckets {
 				if tx.Bucket([]byte(b)) == nil {
 					return fmt.Errorf("missing bucket")
@@ -156,6 +167,14 @@ func (s *BoltStore) Start(ctx context.Context) (err error) {
 		}
 		for _, b := range buckets {
 			if _, e := tx.CreateBucket([]byte(b)); e != nil {
+				return e
+			}
+		}
+		if isWork {
+			if _, e := tx.CreateBucket([]byte("branches")); e != nil {
+				return e
+			}
+			if e := put(tx, "branches", []byte(g.ID), genesisBranch); e != nil {
 				return e
 			}
 		}
@@ -216,6 +235,9 @@ func (s *BoltStore) Start(ctx context.Context) (err error) {
 				}
 			}
 		}
+	}
+	if e == nil && isWork {
+		e = reader.validateBranches(ctx, wp, g)
 	}
 	return e
 }
@@ -304,6 +326,10 @@ func (s *BoltStore) Snapshot(ctx context.Context, id core.ID) (core.StateReader,
 	return &stateSnapshot{State: state, Commitment: root}, nil
 }
 func (s *BoltStore) Commit(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) error {
+	if _, ok := s.p.(core.WorkProtocol); ok {
+		_, e := s.importBlock(ctx, parent, b, r, true)
+		return e
+	}
 	if b == nil {
 		return fmt.Errorf("nil block")
 	}
