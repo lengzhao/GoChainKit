@@ -46,7 +46,8 @@ func TestNonceDispositions(t *testing.T) {
 			if test.previous > 0 {
 				encoded := make([]byte, 8)
 				binary.BigEndian.PutUint64(encoded, test.previous)
-				state[nonceKey(raw.Sender())] = encoded
+				sender := raw.Sender()
+				state[string(append([]byte{0}, sender[:]...))] = encoded
 			}
 			_, err = e.Execute(ctx, nonceSnapshot{state: state}, draft)
 			var disposition *core.TransactionError

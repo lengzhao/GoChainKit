@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"github.com/lengzhao/GoChainKit/core"
+	"github.com/lengzhao/GoChainKit/protocol/kv"
 	pow "github.com/lengzhao/GoChainKit/protocol/powkv"
 	db "go.etcd.io/bbolt"
 	"path/filepath"
@@ -34,7 +35,9 @@ func powChild(t *testing.T, p core.WorkProtocol, s core.BranchLedger, parent cor
 	if e != nil {
 		t.Fatal(e)
 	}
-	ex, e := pow.NewExecutor(p)
+	base, _ := kv.New(kv.Config{ChainID: p.Protocol().Network})
+	inner, _ := kv.NewExecutor(base)
+	ex, e := pow.NewExecutor(p, inner)
 	if e != nil {
 		t.Fatal(e)
 	}

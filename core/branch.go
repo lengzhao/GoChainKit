@@ -22,3 +22,14 @@ type BranchPolicy interface {
 	Prefer(context.Context, ChainStore, Block, Block, []byte, []byte) (bool, error)
 	Finalized(context.Context, ChainStore, Block) (ID, error)
 }
+
+// BranchChange describes a canonical switch. Detached is old tip first; Attached
+// is ancestor first. Neither includes the common ancestor. Selection and tie behavior belong to BranchPolicy.
+type BranchChange struct {
+	OldHead, NewHead   ID
+	Detached, Attached []Block
+}
+type BranchLedger interface {
+	Ledger
+	Import(context.Context, ID, Block, ExecutionResult) (BranchChange, error)
+}

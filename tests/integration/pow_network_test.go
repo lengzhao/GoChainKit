@@ -11,8 +11,10 @@ import (
 	"github.com/lengzhao/GoChainKit/plugins/consensus"
 	pool "github.com/lengzhao/GoChainKit/plugins/mempool"
 	"github.com/lengzhao/GoChainKit/plugins/network"
+	"github.com/lengzhao/GoChainKit/plugins/replication"
 	"github.com/lengzhao/GoChainKit/plugins/selector"
 	store "github.com/lengzhao/GoChainKit/plugins/storage"
+	"github.com/lengzhao/GoChainKit/protocol/kv"
 	pow "github.com/lengzhao/GoChainKit/protocol/powkv"
 	"path/filepath"
 	"reflect"
@@ -42,7 +44,9 @@ func startPoWNodeMode(t *testing.T, p core.WorkProtocol, path string, mining boo
 	if e != nil {
 		t.Fatal(e)
 	}
-	ex, e := pow.NewExecutor(p)
+	baseProtocol, _ := kv.New(kv.Config{ChainID: p.Protocol().Network})
+	inner, _ := kv.NewExecutor(baseProtocol)
+	ex, e := pow.NewExecutor(p, inner)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -59,7 +63,15 @@ func startPoWNodeMode(t *testing.T, p core.WorkProtocol, path string, mining boo
 	if e != nil {
 		t.Fatal(e)
 	}
-	c, e := consensus.NewPoW(consensus.PoWConfig{Interval: "25ms", SyncInterval: "20ms", Mining: &mining}, consensus.PoWDeps{Protocol: p, Ledger: s, Builder: b, Executor: ex, Pool: m, Network: n})
+	imp, e := replication.NewImporter(replication.ImportConfig{}, replication.ImportDeps{Rules: p, Ledger: s, Executor: ex, Pool: m})
+	if e != nil {
+		t.Fatal(e)
+	}
+	rep, e := replication.NewSync(replication.SyncConfig{Interval: "20ms"}, replication.SyncDeps{Rules: p, Ledger: s, Pool: m, Network: n, Importer: imp})
+	if e != nil {
+		t.Fatal(e)
+	}
+	c, e := consensus.NewPoW(consensus.PoWConfig{Interval: "25ms", Mining: &mining}, consensus.PoWDeps{Protocol: p, Ledger: s, Builder: b, Importer: imp, Replication: rep})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -230,6 +242,22 @@ func TestPoWThreeAutomaticMinersConvergeAfterRestart(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
+	t.Cleanup(func() {
+		if t.Failed() {
+			for i, n := range nodes {
+				h, he := n.ledger.Head(context.Background())
+				pool, pe := n.pool.Candidates(context.Background())
+				_, te := n.ledger.Transaction(context.Background(), signedPoW(t, p, 7, "propagated").ID())
+				t.Logf("node %d height=%d head=%x headErr=%v pool=%d poolErr=%v txErr=%v peers=%d", i, height(n), h, he, len(pool), pe, te, len(n.network.Peers()))
+				select {
+				case e := <-n.done:
+					t.Logf("node %d already exited: %v", i, e)
+					n.done <- e
+				default:
+				}
+			}
+		}
+	})
 	tx := signedPoW(t, p, 7, "propagated")
 	if e := nodes[0].pool.Add(ctx, tx); e != nil {
 		t.Fatal(e)

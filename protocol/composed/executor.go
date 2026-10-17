@@ -32,11 +32,9 @@ func (s stateReader) Entries(ctx context.Context) (map[string][]byte, error) {
 func (s stateReader) Root() core.Commitment { return s.root }
 func (s stateReader) Close() error          { return nil }
 
-// Execute is independent of proof production and also accepts sealed peer blocks.
-func (p *Protocol) Execute(ctx context.Context, s core.StateReader, b core.Block) (core.ExecutionResult, error) {
-	return p.execute(ctx, s, b, nil)
-}
-func (p *Protocol) execute(ctx context.Context, s core.StateReader, b core.Block, history core.ChainStore) (core.ExecutionResult, error) {
+// Execute runs model semantics independently of consensus proof production.
+func (executor *Executor) Execute(ctx context.Context, s core.StateReader, b core.Block) (core.ExecutionResult, error) {
+	p, history := executor.protocol, executor.history
 	v, e := Unwrap(b)
 	if e != nil {
 		return core.ExecutionResult{}, e
@@ -155,19 +153,23 @@ type Executor struct {
 	history  core.ChainStore
 }
 
-func NewExecutor(p *Protocol, history core.ChainStore) (*Executor, error) {
-	if p == nil || history == nil {
-		return nil, fmt.Errorf("protocol and history required")
+// NewExecutor accepts this protocol family's capability without exposing its
+// concrete base object through the plugin dependency graph.
+func NewExecutor(protocol core.Protocol, history core.ChainStore) (*Executor, error) {
+	provider, ok := protocol.(interface{ executionProtocol() *Protocol })
+	if !ok || history == nil {
+		return nil, fmt.Errorf("composed protocol and history required")
 	}
-	if e := core.RequireCompatible(p.Protocol(), history); e != nil {
-		return nil, e
+	p := provider.executionProtocol()
+	if p == nil {
+		return nil, fmt.Errorf("nil composed protocol")
+	}
+	if err := core.RequireCompatible(p.Protocol(), history); err != nil {
+		return nil, err
 	}
 	return &Executor{p, readOnlyHistory{history}}, nil
 }
 func (e *Executor) Protocol() core.ProtocolDescriptor { return e.protocol.Protocol() }
-func (e *Executor) Execute(ctx context.Context, s core.StateReader, b core.Block) (core.ExecutionResult, error) {
-	return e.protocol.execute(ctx, s, b, e.history)
-}
 
 type readOnlyHistory struct{ core.ChainStore }
 type executionContext struct {
@@ -179,7 +181,7 @@ type executionContext struct {
 func (e executionContext) Parent() core.Block          { return e.parent }
 func (e executionContext) Candidate() core.Block       { return e.candidate }
 func (e executionContext) History() model.BlockHistory { return e.history }
-func (p *Protocol) Base() *Protocol                    { return p }
+func (p *Protocol) executionProtocol() *Protocol       { return p }
 
 func (e executionContext) StateCommitment(ctx context.Context, state map[string][]byte) (core.Commitment, error) {
 	return e.protocol.StateCommitment(ctx, state)

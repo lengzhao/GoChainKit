@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"math/big"
 )
 
@@ -13,15 +12,4 @@ type WorkProtocol interface {
 	Parent(Block) (ID, error)
 	Work(Block) (*big.Int, error)
 	BlockSealer
-}
-
-// BranchChange describes a canonical switch. Detached is old tip first; Attached
-// is ancestor first. Neither includes the common ancestor. Equal work keeps head.
-type BranchChange struct {
-	OldHead, NewHead   ID
-	Detached, Attached []Block
-}
-type BranchLedger interface {
-	Ledger
-	Import(context.Context, ID, Block, ExecutionResult) (BranchChange, error)
 }

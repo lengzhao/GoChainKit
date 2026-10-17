@@ -169,3 +169,8 @@ PoW、DPoS 的运行编排与规则验证分离；选链与最终性策略独立
 已落实建议 1—5：补充执行与验证顺序、奖励归属、分数不透明性契约；构造期解析并保存启用的 Economics/Currency；在 model 中公开 HeightContext、TimestampContext、StateCommitmentContext。基础 ExecutionContext 不增加必选方法。
 
 account、UTXO 和 PoW 的插件适配入口已预留空的类型化 Deps，领域构造函数保持独立。既有 composed 和 builder 的显式依赖组合继续保留；尚未新增奖励、调难或状态感知校验子插件，相关拆分需有实际替换需求。
+
+
+## 后续实现简化
+
+执行入口已统一为独立 composed.Executor；公开的 Protocol.Execute 和 Base 桥接已移除。内部保留封装族身份解析，不将其升级成所有协议必须支持的通用接口。KV 执行逻辑移入领域层，powkv 通过显式依赖复用；领域包不依赖 plugins。编码助手保持内部共享，Envelope 以显式深复制保持所有权及 nil/空值语义。

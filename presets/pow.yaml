@@ -12,9 +12,15 @@ plugins:
     use: mempool/memory
     config: {maxTransactions: 1000, maxBytes: 16777216}
     deps: {protocol: protocol}
+  base-protocol:
+    use: protocol/kv
+    config: {chainID: dev}
+  base-executor:
+    use: executor/kv
+    deps: {protocol: base-protocol}
   executor:
     use: executor/powkv
-    deps: {protocol: protocol}
+    deps: {protocol: protocol, inner: base-executor}
   selector:
     use: selector/fifo
     deps: {protocol: protocol}
@@ -29,10 +35,17 @@ plugins:
     use: network/libp2p
     config: {identityPath: data/pow-peer.key, listen: [/ip4/127.0.0.1/tcp/19001], seeds: []}
     deps: {protocol: protocol}
+  importer:
+    use: importer/branch
+    deps: {protocol: protocol, ledger: ledger, executor: executor, pool: pool}
+  replication:
+    use: sync/chain
+    config: {interval: 500ms}
+    deps: {protocol: protocol, ledger: ledger, pool: pool, network: network, importer: importer}
   consensus:
     use: consensus/pow
-    config: {interval: 1s, syncInterval: 500ms}
-    deps: {protocol: protocol, ledger: ledger, builder: builder, executor: executor, pool: pool, network: network}
+    config: {interval: 1s}
+    deps: {protocol: protocol, ledger: ledger, builder: builder, importer: importer, replication: replication}
   node:
     use: node/default
     config: {shutdownTimeout: 5s}

@@ -28,6 +28,10 @@ func TestHistoricalDifficultyTimeAndRetarget(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	executor, e := composed.NewExecutor(p, s)
+	if e != nil {
+		t.Fatal(e)
+	}
 	for height := uint64(1); height <= 4; height++ {
 		now = 1000000000 + int64(height)*10
 		parentID, _ := s.Head(ctx)
@@ -37,7 +41,7 @@ func TestHistoricalDifficultyTimeAndRetarget(t *testing.T) {
 			t.Fatal(e)
 		}
 		snap, _ := s.Snapshot(ctx, parentID)
-		result, e := p.Execute(ctx, snap, draft)
+		result, e := executor.Execute(ctx, snap, draft)
 		snap.Close()
 		if e != nil {
 			t.Fatal(e)

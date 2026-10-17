@@ -59,7 +59,7 @@ func TestNonCurrencyModelAndOptionalContext(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	executor, e := composed.NewExecutor(p.Base(), s)
+	executor, e := composed.NewExecutor(p, s)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -70,9 +70,6 @@ func TestNonCurrencyModelAndOptionalContext(t *testing.T) {
 		t.Fatal(e)
 	}
 	snap, _ := s.Snapshot(ctx, head)
-	if _, e = p.Execute(ctx, snap, draft); e == nil {
-		t.Fatal("contextual model accepted missing history")
-	}
 	result, e := executor.Execute(ctx, snap, draft)
 	snap.Close()
 	if e != nil {
@@ -151,7 +148,7 @@ func TestExecutionCandidateStableBeforeAfterSeal(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	executor, _ := composed.NewExecutor(p.Base(), ledger)
+	executor, _ := composed.NewExecutor(p, ledger)
 	g, _ := ledger.Head(ctx)
 	parent, _ := ledger.Block(ctx, g)
 	draft, e := p.Draft(ctx, parent, nil)
@@ -215,8 +212,8 @@ func TestExecutionHistoryExcludesLocalSideBranches(t *testing.T) {
 	}
 	left, _ := storage.NewMemory(storage.MemoryConfig{}, storage.Deps{Protocol: p})
 	right, _ := storage.NewMemory(storage.MemoryConfig{}, storage.Deps{Protocol: p})
-	leftExec, _ := composed.NewExecutor(p.Base(), left)
-	rightExec, _ := composed.NewExecutor(p.Base(), right)
+	leftExec, _ := composed.NewExecutor(p, left)
+	rightExec, _ := composed.NewExecutor(p, right)
 	g, _ := left.Head(ctx)
 	parent, _ := left.Block(ctx, g)
 	sideDraft, _ := p.Draft(ctx, parent, []core.Transaction{testprotocol.Tx{Label: "side"}})

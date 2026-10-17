@@ -10,6 +10,7 @@ import (
 	_ "github.com/lengzhao/GoChainKit/plugins/network"
 	_ "github.com/lengzhao/GoChainKit/plugins/node"
 	_ "github.com/lengzhao/GoChainKit/plugins/protocol"
+	_ "github.com/lengzhao/GoChainKit/plugins/replication"
 	_ "github.com/lengzhao/GoChainKit/plugins/selector"
 	_ "github.com/lengzhao/GoChainKit/plugins/storage"
 )

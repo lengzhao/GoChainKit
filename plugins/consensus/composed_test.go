@@ -7,6 +7,7 @@ import (
 	"github.com/lengzhao/GoChainKit/model/account"
 	"github.com/lengzhao/GoChainKit/plugins/builder"
 	"github.com/lengzhao/GoChainKit/plugins/mempool"
+	"github.com/lengzhao/GoChainKit/plugins/replication"
 	"github.com/lengzhao/GoChainKit/plugins/selector"
 	"github.com/lengzhao/GoChainKit/plugins/storage"
 	"github.com/lengzhao/GoChainKit/protocol/composed"
@@ -39,11 +40,23 @@ func TestPoWMinerExplicitlySealsFinalizedProposal(t *testing.T) {
 	}
 	pool, _ := mempool.NewMemory(mempool.MemoryConfig{MaxTransactions: 10, MaxBytes: 4096}, mempool.Deps{Protocol: protocol})
 	sel, _ := selector.NewFIFO(selector.FIFOConfig{}, selector.Deps{Protocol: protocol})
-	builder, e := builder.NewBasic(builder.BasicConfig{MaxTransactionBytes: 4096}, builder.Deps{Protocol: protocol, Ledger: ledger, Pool: pool, Executor: protocol, Selector: sel})
+	executor, e := composed.NewExecutor(protocol, ledger)
 	if e != nil {
 		t.Fatal(e)
 	}
-	miner, e := NewPoW(PoWConfig{Interval: "1ms", SyncInterval: "1h"}, PoWDeps{Protocol: p, Ledger: ledger, Builder: builder, Executor: protocol, Pool: pool, Network: nullPoWNetwork{descriptor: p.Protocol()}})
+	builder, e := builder.NewBasic(builder.BasicConfig{MaxTransactionBytes: 4096}, builder.Deps{Protocol: protocol, Ledger: ledger, Pool: pool, Executor: executor, Selector: sel})
+	if e != nil {
+		t.Fatal(e)
+	}
+	imp, e := replication.NewImporter(replication.ImportConfig{}, replication.ImportDeps{Rules: p, Ledger: ledger, Executor: executor, Pool: pool})
+	if e != nil {
+		t.Fatal(e)
+	}
+	rep, e := replication.NewSync(replication.SyncConfig{Interval: "1h"}, replication.SyncDeps{Rules: p, Ledger: ledger, Pool: pool, Network: nullPoWNetwork{descriptor: p.Protocol()}, Importer: imp})
+	if e != nil {
+		t.Fatal(e)
+	}
+	miner, e := NewPoW(PoWConfig{Interval: "1ms"}, PoWDeps{Protocol: p, Ledger: ledger, Builder: builder, Importer: imp, Replication: rep})
 	if e != nil {
 		t.Fatal(e)
 	}

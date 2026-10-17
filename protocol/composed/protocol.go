@@ -9,9 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/lengzhao/GoChainKit/core"
+	"github.com/lengzhao/GoChainKit/internal/jsoncodec"
 	"github.com/lengzhao/GoChainKit/model"
 	"github.com/lengzhao/GoChainKit/model/asset"
-	"io"
 	"math"
 	"math/big"
 	"sort"
@@ -52,11 +52,24 @@ func (e Envelope) ID() core.ID {
 	return core.ID(string(DoubleHash(append([]byte("gochainkit/composed/block/v1\x00"), data...))))
 }
 func clone(e Envelope) Envelope {
-	data, _ := json.Marshal(e)
-	var out Envelope
-	_ = json.Unmarshal(data, &out)
-	return out
+	e.Header.Binding = bytes.Clone(e.Header.Binding)
+	e.Header.Parent = bytes.Clone(e.Header.Parent)
+	e.Header.TransactionsRoot = bytes.Clone(e.Header.TransactionsRoot)
+	e.Header.StateRoot = bytes.Clone(e.Header.StateRoot)
+	e.Header.ReceiptsRoot = bytes.Clone(e.Header.ReceiptsRoot)
+	e.Header.Producer = bytes.Clone(e.Header.Producer)
+	e.Header.Consensus = bytes.Clone(e.Header.Consensus)
+	e.Proof = bytes.Clone(e.Proof)
+	if e.Transactions != nil {
+		txs := make([][]byte, len(e.Transactions))
+		for i, tx := range e.Transactions {
+			txs[i] = bytes.Clone(tx)
+		}
+		e.Transactions = txs
+	}
+	return e
 }
+
 func Wrap(e Envelope) (core.Block, error) {
 	if e.Header.Version != 1 || len(e.Header.Binding) != 32 {
 		return nil, fmt.Errorf("invalid composed envelope")
@@ -145,19 +158,9 @@ func (p *Protocol) DecodeBlock(raw []byte) (core.Block, error) {
 	if len(raw) > 4<<20 {
 		return nil, core.ErrFull
 	}
-	d := json.NewDecoder(bytes.NewReader(raw))
-	d.DisallowUnknownFields()
 	var e Envelope
-	if err := d.Decode(&e); err != nil {
+	if err := jsoncodec.Canonical(raw, &e); err != nil {
 		return nil, err
-	}
-	var tail any
-	if err := d.Decode(&tail); err != io.EOF {
-		return nil, fmt.Errorf("trailing block data")
-	}
-	canonical, _ := json.Marshal(e)
-	if !bytes.Equal(canonical, raw) {
-		return nil, fmt.Errorf("noncanonical envelope")
 	}
 	if !bytes.Equal(e.Header.Binding, p.binding) {
 		return nil, fmt.Errorf("foreign chain binding")

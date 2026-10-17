@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/lengzhao/GoChainKit/core"
-	"io"
+	"github.com/lengzhao/GoChainKit/internal/jsoncodec"
 	"math"
 )
 
@@ -73,18 +73,7 @@ func New(c Config) (core.Protocol, error) {
 func (p *protocol) Protocol() core.ProtocolDescriptor {
 	return core.ProtocolDescriptor{Name: "kv", Version: "1", Network: p.network}
 }
-func strict(data []byte, v any) error {
-	d := json.NewDecoder(bytes.NewReader(data))
-	d.DisallowUnknownFields()
-	if e := d.Decode(v); e != nil {
-		return e
-	}
-	var tail any
-	if e := d.Decode(&tail); e != io.EOF {
-		return fmt.Errorf("trailing JSON")
-	}
-	return nil
-}
+
 func (p *protocol) EncodeTransaction(t core.Transaction) ([]byte, error) {
 	v, e := UnwrapTransaction(t)
 	if e != nil {
@@ -97,7 +86,7 @@ func (p *protocol) EncodeTransaction(t core.Transaction) ([]byte, error) {
 }
 func (p *protocol) DecodeTransaction(data []byte) (core.Transaction, error) {
 	var t Transaction
-	if e := strict(data, &t); e != nil {
+	if e := jsoncodec.Strict(data, &t); e != nil {
 		return nil, e
 	}
 	if e := t.Verify(p.network); e != nil {
@@ -127,7 +116,7 @@ func (p *protocol) EncodeBlock(b core.Block) ([]byte, error) {
 }
 func (p *protocol) DecodeBlock(data []byte) (core.Block, error) {
 	var b Block
-	if e := strict(data, &b); e != nil {
+	if e := jsoncodec.Strict(data, &b); e != nil {
 		return nil, e
 	}
 	if b.Header.ChainID != p.network {

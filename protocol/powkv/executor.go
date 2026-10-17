@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"github.com/lengzhao/GoChainKit/core"
-	executor "github.com/lengzhao/GoChainKit/plugins/executor"
 	kv "github.com/lengzhao/GoChainKit/protocol/kv"
 )
 
@@ -13,17 +12,14 @@ type adaptedExecutor struct {
 	inner    core.Executor
 }
 
-func NewExecutor(p core.WorkProtocol) (core.Executor, error) {
+// NewExecutor adapts an explicitly supplied KV executor to PoW block envelopes.
+func NewExecutor(p core.WorkProtocol, inner core.Executor) (core.Executor, error) {
 	if p == nil || p.Protocol().Name != "powkv" || p.Protocol().Version != "1" {
 		return nil, fmt.Errorf("incompatible protocol")
 	}
-	base, e := kv.New(kv.Config{ChainID: p.Protocol().Network})
-	if e != nil {
-		return nil, e
-	}
-	inner, e := executor.NewKV(executor.KVConfig{}, executor.Deps{Protocol: base})
-	if e != nil {
-		return nil, e
+	expected := core.ProtocolDescriptor{Name: "kv", Version: "1", Network: p.Protocol().Network}
+	if err := core.RequireCompatible(expected, inner); err != nil {
+		return nil, err
 	}
 	return &adaptedExecutor{p, inner}, nil
 }

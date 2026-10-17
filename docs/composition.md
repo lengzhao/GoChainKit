@@ -29,3 +29,17 @@ InitialReward大于零或currency为true会启用资产适配；currency=true可
 见presets/pow-account.yaml和presets/pow-utxo.yaml。它们通过同一规则插件分别装配账户、UTXO模型，共用存储、构块、网络与共识运行器。producer使用32字节收款地址的十六进制文本。两个示例使用不同网络标识和磁盘路径；多节点运行同一组合时须保持网络、模型创世分配和规则配置一致，分别设置本地磁盘、身份、监听地址和种子。
 
 已覆盖两种模型的真实签名转账、奖励与手续费、分叉重组、被撤销转账恢复、Bolt重开并继续出块；真实libp2p测试覆盖交易传播、对端确认、节点停机后继续出块及重启追赶的状态一致。另有非货币计数模型与可选执行上下文测试，以及compact非法编码、历史目标伪造、调难限幅、MTP、未来时间、奖励减半和挖矿取消检查。
+
+
+## 运行能力组合
+
+两种模型使用相同的 `importer/branch`、`sync/chain` 和 `consensus/pow` 组合。导入器只依赖分支协议、账本、执行器和交易池；同步只依赖只读账本、交易池、网络及导入能力；PoW 调度器注入构块、封印、导入和同步能力。导入与同步不依赖工作量接口，不把选链或经济规则写死在网络层。
+
+```text
+model + rule + choice -> protocol -> executor + builder
+protocol + ledger + executor + pool -> importer/branch
+protocol + ledger(read-only) + pool + network + importer -> sync/chain
+protocol + ledger(read-only) + builder + importer + sync -> consensus/pow
+```
+
+每个子插件通过显式 Deps 装配，账本 owner 必须一致；Network 的 Handler 仅由 sync/chain 持有。同步间隔配置在 `replication.config.interval`，挖矿间隔仍在 `consensus.config.interval`，两者独立。完整示例见三个 PoW preset。

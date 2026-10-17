@@ -88,3 +88,17 @@ BranchProtocol 是可选单父分支能力，与通用Protocol的任意引用格
 `BlockFactory.Finalize` 绑定执行承诺。提供可选 `ProposalValidator` 的协议可让构块器验证尚未封印的提案；之后共识通过 `BlockSealer` 生成证明。持久化始终调用 `ValidateBlock`，未封印提案不能落盘。未提供新能力的旧协议仍按原定稿后验证路径运行。
 
 状态变更的 `Writes` 与 `Deletes` 分开表达，空值仍表示存在的键。`core.ApplyStateChanges` 提供统一、复制隔离的应用语义；删除重复或与写入冲突明确拒绝。
+
+
+## 实现分层与可复用运行能力
+
+KV 执行语义由 `protocol/kv.NewExecutor` 提供，`plugins/executor` 仅适配注册。`protocol/powkv.NewExecutor` 显式接收内层 KV 执行器并验证其协议身份，不再引用插件层或隐式创建依赖。旧 KV/powkv 格式保持不变。
+
+composed 的执行统一通过 `composed.NewExecutor(protocol, history)` 创建；Protocol 本身不再实现 Executor，也不公开 Base 具体类型桥接。模型上下文、奖励应用和执行结果整理归入独立 Executor，普通模型和上下文模型使用同一入口。
+
+严格 JSON 解码 mechanics 复用 `internal/jsoncodec`；每种协议继续决定大小上限、是否要求规范字节及签名和交易语义。KV 保留原有严格解码策略，不能因公共助手而改变历史编码接受规则。
+
+
+`core.BlockImporter` 是验证、执行、分支提交及提交后交易池维护的独立能力，`core.Replicator` 是链追赶与交易传播的独立运行能力。两者都绑定协议和账本 owner。`importer/branch` 与 `sync/chain` 通过依赖图装配；PoW 调度器只依赖构块、封印和这些运行能力。同步插件拥有唯一网络消息 handler，不要求工作量证明能力。
+
+Memory/Bolt 共享包内导入准备逻辑，后端分别持有原子提交和 CAS。正常导入只加载执行父块与规范链头的相关祖先，规范链交易和回执索引根据 Detached/Attached 增量更新；启动恢复仍全量核对。深链祖先遍历和全状态快照成本仍存在，不能据此承诺常数复杂度。

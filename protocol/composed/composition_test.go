@@ -77,6 +77,10 @@ func TestPoWAccountUTXOReorgRecovery(t *testing.T) {
 				t.Fatal(e)
 			}
 			defer func() { s.Stop(ctx) }()
+			executor, e := composed.NewExecutor(p, s)
+			if e != nil {
+				t.Fatal(e)
+			}
 			build := func(parent core.ID, txs []core.Transaction) core.Block {
 				pb, e := s.Block(ctx, parent)
 				if e != nil {
@@ -87,7 +91,7 @@ func TestPoWAccountUTXOReorgRecovery(t *testing.T) {
 					t.Fatal(e)
 				}
 				snap, _ := s.Snapshot(ctx, parent)
-				r, e := p.Execute(ctx, snap, draft)
+				r, e := executor.Execute(ctx, snap, draft)
 				snap.Close()
 				if e != nil {
 					t.Fatal(e)

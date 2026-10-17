@@ -18,6 +18,7 @@ type branchNode struct {
 type branchPlan struct {
 	Head               core.ID
 	Detached, Attached []core.ID
+	Removed            []core.ID
 	Transactions       map[core.ID]storedTransaction
 	Receipts           map[core.ID]core.Receipt
 }
@@ -179,15 +180,16 @@ func planBranch(ctx context.Context, p core.BranchProtocol, policy core.BranchPo
 	out.Head = id
 	out.Transactions = map[core.ID]storedTransaction{}
 	out.Receipts = map[core.ID]core.Receipt{}
-	for i := len(newPath) - 1; i >= 0; i-- {
-		n := graph[newPath[i]]
-		for tx, r := range n.Prepared.Transactions {
-			if _, ok := out.Transactions[tx]; ok {
-				return out, fmt.Errorf("transaction repeated in branch")
-			}
+	for _, block := range out.Detached {
+		for tx := range graph[block].Prepared.Transactions {
+			out.Removed = append(out.Removed, tx)
+		}
+	}
+	for _, block := range out.Attached {
+		for tx, r := range graph[block].Prepared.Transactions {
 			out.Transactions[tx] = r
 		}
-		for tx, r := range n.Prepared.Receipts {
+		for tx, r := range graph[block].Prepared.Receipts {
 			out.Receipts[tx] = r
 		}
 	}
@@ -211,6 +213,60 @@ func branchChange(p core.BranchProtocol, graph map[core.ID]branchNode, old core.
 	}
 	return out, nil
 }
+
+// prepareBranchImport shares validation and planning while backends retain ownership
+// of their atomic commit and head compare-and-swap. Published branch records are
+// immutable; loading ancestors on demand needs no lock across policy callbacks.
+func prepareBranchImport(ctx context.Context, p core.BranchProtocol, policy core.BranchPolicy, chain core.LedgerReader, head, parent core.ID, b core.Block, r core.ExecutionResult, linear bool, load func(core.ID) (branchNode, error)) (branchNode, branchPlan, core.BranchChange, error) {
+	var empty branchNode
+	var plan branchPlan
+	var change core.BranchChange
+	if b == nil {
+		return empty, plan, change, fmt.Errorf("nil block")
+	}
+	if linear && parent != head {
+		return empty, plan, change, core.ErrConflict
+	}
+	if _, e := load(b.ID()); e == nil {
+		return empty, plan, change, core.ErrAlreadyCommitted
+	} else if e != core.ErrNotFound {
+		return empty, plan, change, e
+	}
+	graph := map[core.ID]branchNode{}
+	for _, tip := range []core.ID{parent, head} {
+		seen := map[core.ID]bool{}
+		for tip != "" {
+			if e := ctx.Err(); e != nil {
+				return empty, plan, change, e
+			}
+			if seen[tip] {
+				return empty, plan, change, fmt.Errorf("branch cycle")
+			}
+			seen[tip] = true
+			if _, ok := graph[tip]; ok {
+				break
+			}
+			n, e := load(tip)
+			if e != nil {
+				return empty, plan, change, e
+			}
+			graph[tip] = n
+			tip = n.Parent
+		}
+	}
+	n, e := branchCandidate(ctx, p, policy, chain, parent, b, r, graph)
+	if e != nil {
+		return empty, plan, change, e
+	}
+	graph[b.ID()] = n
+	plan, e = planBranch(ctx, p, policy, chain, graph, head, b.ID())
+	if e != nil {
+		return empty, plan, change, e
+	}
+	change, e = branchChange(p, graph, head, plan)
+	return n, plan, change, e
+}
+
 func (s *MemoryStore) Import(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) (core.BranchChange, error) {
 	return s.importBlock(ctx, parent, b, r, false)
 }
@@ -219,32 +275,19 @@ func (s *MemoryStore) importBlock(ctx context.Context, parent core.ID, b core.Bl
 	if !ok || s.policy == nil {
 		return core.BranchChange{}, fmt.Errorf("branch protocol and policy required")
 	}
-	if b == nil {
-		return core.BranchChange{}, fmt.Errorf("nil block")
-	}
 	s.mu.RLock()
 	head := s.head
-	graph := make(map[core.ID]branchNode, len(s.branches)+1)
-	for id, n := range s.branches {
-		graph[id] = n
-	}
 	s.mu.RUnlock()
-	if linear && parent != head {
-		return core.BranchChange{}, core.ErrConflict
+	load := func(id core.ID) (branchNode, error) {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		n, ok := s.branches[id]
+		if !ok {
+			return branchNode{}, core.ErrNotFound
+		}
+		return n, nil
 	}
-	if _, ok := graph[b.ID()]; ok {
-		return core.BranchChange{}, core.ErrAlreadyCommitted
-	}
-	n, e := branchCandidate(ctx, p, s.policy, s, parent, b, r, graph)
-	if e != nil {
-		return core.BranchChange{}, e
-	}
-	graph[b.ID()] = n
-	plan, e := planBranch(ctx, p, s.policy, s, graph, head, b.ID())
-	if e != nil {
-		return core.BranchChange{}, e
-	}
-	change, e := branchChange(p, graph, head, plan)
+	n, plan, change, e := prepareBranchImport(ctx, p, s.policy, s, head, parent, b, r, linear, load)
 	if e != nil {
 		return change, e
 	}
@@ -265,8 +308,16 @@ func (s *MemoryStore) importBlock(ctx context.Context, parent core.ID, b core.Bl
 	s.states[id] = n.Prepared.State
 	s.roots[id] = n.Prepared.Root
 	if plan.Head != head {
-		s.transactions = plan.Transactions
-		s.receipts = plan.Receipts
+		for _, tx := range plan.Removed {
+			delete(s.transactions, tx)
+			delete(s.receipts, tx)
+		}
+		for tx, value := range plan.Transactions {
+			s.transactions[tx] = value
+		}
+		for tx, value := range plan.Receipts {
+			s.receipts[tx] = value
+		}
 		s.head = plan.Head
 	}
 	return change, nil
@@ -279,29 +330,16 @@ func (s *BoltStore) importBlock(ctx context.Context, parent core.ID, b core.Bloc
 	if !ok || s.policy == nil {
 		return core.BranchChange{}, fmt.Errorf("branch protocol and policy required")
 	}
-	if b == nil {
-		return core.BranchChange{}, fmt.Errorf("nil block")
-	}
-	graph, head, e := s.branchGraph(ctx)
+	head, e := s.Head(ctx)
 	if e != nil {
 		return core.BranchChange{}, e
 	}
-	if linear && head != parent {
-		return core.BranchChange{}, core.ErrConflict
+	load := func(id core.ID) (branchNode, error) {
+		var n branchNode
+		e := s.view(ctx, func(tx *db.Tx) error { return get(tx, "branches", []byte(id), &n) })
+		return n, e
 	}
-	if _, ok := graph[b.ID()]; ok {
-		return core.BranchChange{}, core.ErrAlreadyCommitted
-	}
-	n, e := branchCandidate(ctx, p, s.policy, s, parent, b, r, graph)
-	if e != nil {
-		return core.BranchChange{}, e
-	}
-	graph[b.ID()] = n
-	plan, e := planBranch(ctx, p, s.policy, s, graph, head, b.ID())
-	if e != nil {
-		return core.BranchChange{}, e
-	}
-	change, e := branchChange(p, graph, head, plan)
+	n, plan, change, e := prepareBranchImport(ctx, p, s.policy, s, head, parent, b, r, linear, load)
 	if e != nil {
 		return change, e
 	}
@@ -366,12 +404,11 @@ func (s *BoltStore) commitBranch(ctx context.Context, tx *db.Tx, expected core.I
 		}
 	}
 	if plan.Head != expected {
-		for _, name := range []string{"transactions", "receipts"} {
-			if e := tx.DeleteBucket([]byte(name)); e != nil {
-				return e
-			}
-			if _, e := tx.CreateBucket([]byte(name)); e != nil {
-				return e
+		for _, id := range plan.Removed {
+			for _, name := range []string{"transactions", "receipts"} {
+				if e := tx.Bucket([]byte(name)).Delete([]byte(id)); e != nil {
+					return e
+				}
 			}
 		}
 		for id, r := range plan.Transactions {

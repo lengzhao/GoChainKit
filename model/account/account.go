@@ -11,9 +11,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/lengzhao/GoChainKit/core"
+	"github.com/lengzhao/GoChainKit/internal/jsoncodec"
 	"github.com/lengzhao/GoChainKit/model"
 	"github.com/lengzhao/GoChainKit/model/asset"
-	"io"
 )
 
 type Config struct {
@@ -170,25 +170,18 @@ func (e *Engine) DecodeTransaction(data []byte) (core.Transaction, error) {
 		return nil, fmt.Errorf("account transaction too large")
 	}
 	var t Transaction
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&t); err != nil {
+	if err := jsoncodec.Canonical(data, &t); err != nil {
 		return nil, err
 	}
-	if err := decoder.Decode(new(any)); err != io.EOF {
-		return nil, fmt.Errorf("trailing transaction data")
-	}
+
 	tx, err := Wrap(t)
 	if err != nil {
 		return nil, err
 	}
-	canonical, err := e.EncodeTransaction(tx)
-	if err != nil {
+	if err := verify(t, e.network); err != nil {
 		return nil, err
 	}
-	if !bytes.Equal(canonical, data) {
-		return nil, fmt.Errorf("noncanonical transaction")
-	}
+
 	return tx, nil
 }
 func (e *Engine) ValidateTransaction(ctx context.Context, tx core.Transaction) error {

@@ -28,7 +28,9 @@ plugins:
   builder: {use: builder/basic, config: {maxTransactionBytes: 1048576}, deps: {protocol: protocol, ledger: ledger, pool: pool, selector: selector, executor: executor}}
   host: {use: node/coordinator, deps: {protocol: protocol, ledger: ledger, builder: builder, executor: executor, pool: pool}}
   network: {use: network/libp2p, config: {identityPath: %s, listen: [/ip4/127.0.0.1/tcp/0], seeds: []}, deps: {protocol: protocol}}
-  consensus: {use: consensus/pow, config: {interval: 1s, syncInterval: 1s}, deps: {protocol: protocol, ledger: ledger, builder: builder, executor: executor, pool: pool, network: network}}
+  importer: {use: importer/branch, deps: {protocol: protocol, ledger: ledger, executor: executor, pool: pool}}
+  replication: {use: sync/chain, config: {interval: 1s}, deps: {protocol: protocol, ledger: ledger, pool: pool, network: network, importer: importer}}
+  consensus: {use: consensus/pow, config: {interval: 1s}, deps: {protocol: protocol, ledger: ledger, builder: builder, importer: importer, replication: replication}}
   node: {use: node/default, config: {shutdownTimeout: 5s}, deps: {ledger: ledger, host: host, consensus: consensus, resources: [network]}}
 `, model, filepath.Join(t.TempDir(), "chain.db"), filepath.Join(t.TempDir(), "peer.key"))
 			node, results, e := assembly.Load(context.Background(), strings.NewReader(cfg))

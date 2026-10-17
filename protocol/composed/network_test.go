@@ -16,6 +16,7 @@ import (
 	"github.com/lengzhao/GoChainKit/plugins/consensus"
 	"github.com/lengzhao/GoChainKit/plugins/mempool"
 	"github.com/lengzhao/GoChainKit/plugins/network"
+	"github.com/lengzhao/GoChainKit/plugins/replication"
 	"github.com/lengzhao/GoChainKit/plugins/selector"
 	"github.com/lengzhao/GoChainKit/plugins/storage"
 	"github.com/lengzhao/GoChainKit/protocol/composed"
@@ -56,7 +57,7 @@ func startNode(t *testing.T, p *composed.WorkProtocol, path string) *composedNod
 	if e != nil {
 		t.Fatal(e)
 	}
-	executor, e := composed.NewExecutor(p.Base(), s)
+	executor, e := composed.NewExecutor(p, s)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -77,7 +78,15 @@ func startNode(t *testing.T, p *composed.WorkProtocol, path string) *composedNod
 		t.Fatal(e)
 	}
 	mining := false
-	consensus, e := consensus.NewPoW(consensus.PoWConfig{Interval: "20ms", SyncInterval: "20ms", Mining: &mining}, consensus.PoWDeps{Protocol: p, Ledger: s, Builder: builder, Executor: executor, Pool: pool, Network: network})
+	imp, e := replication.NewImporter(replication.ImportConfig{}, replication.ImportDeps{Rules: p, Ledger: s, Executor: executor, Pool: pool})
+	if e != nil {
+		t.Fatal(e)
+	}
+	rep, e := replication.NewSync(replication.SyncConfig{Interval: "20ms"}, replication.SyncDeps{Rules: p, Ledger: s, Pool: pool, Network: network, Importer: imp})
+	if e != nil {
+		t.Fatal(e)
+	}
+	consensus, e := consensus.NewPoW(consensus.PoWConfig{Interval: "20ms", Mining: &mining}, consensus.PoWDeps{Protocol: p, Ledger: s, Builder: builder, Importer: imp, Replication: rep})
 	if e != nil {
 		t.Fatal(e)
 	}
