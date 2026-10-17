@@ -1,12 +1,15 @@
-package core
+package network
 
-import "context"
+import (
+	"context"
+	"github.com/lengzhao/GoChainKit/core"
+)
 
 // Network transports opaque, bounded protocol messages between authenticated
 // peer identities. Chain membership is checked separately from peer identity.
 type Network interface {
-	Lifecycle
-	ProtocolBound
+	core.Lifecycle
+	core.ProtocolBound
 	Addresses() []string
 	Peers() []string
 	Connect(context.Context, string) error

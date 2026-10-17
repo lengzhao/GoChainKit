@@ -3,12 +3,14 @@ package storage
 import (
 	"context"
 	"fmt"
+	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
+	consensuscap "github.com/lengzhao/GoChainKit/cap/consensus"
 	"github.com/lengzhao/GoChainKit/core"
 	"math/big"
 )
 
 // workPolicy preserves the legacy cumulative-work rule behind a policy adapter.
-type workPolicy struct{ p core.WorkProtocol }
+type workPolicy struct{ p consensuscap.WorkProtocol }
 
 func (p workPolicy) Protocol() core.ProtocolDescriptor { return p.p.Protocol() }
 func (p workPolicy) PolicyID() string                  { return "cumulative-work/v1" }
@@ -35,19 +37,19 @@ func (p workPolicy) Prefer(ctx context.Context, _ core.ChainStore, _, _ core.Blo
 func (p workPolicy) Finalized(ctx context.Context, _ core.ChainStore, _ core.Block) (core.ID, error) {
 	return "", ctx.Err()
 }
-func resolvePolicy(d Deps) (core.BranchPolicy, error) {
+func resolvePolicy(d Deps) (chaincap.BranchPolicy, error) {
 	policy := d.Policy
 	if policy == nil {
-		if p, ok := d.Protocol.(core.BranchPolicy); ok {
+		if p, ok := d.Protocol.(chaincap.BranchPolicy); ok {
 			policy = p
-		} else if p, ok := d.Protocol.(core.WorkProtocol); ok {
+		} else if p, ok := d.Protocol.(consensuscap.WorkProtocol); ok {
 			policy = workPolicy{p}
 		}
 	}
 	if policy == nil {
 		return nil, nil
 	}
-	if _, ok := d.Protocol.(core.BranchProtocol); !ok {
+	if _, ok := d.Protocol.(chaincap.BranchProtocol); !ok {
 		return nil, fmt.Errorf("branch policy requires single-parent branch capability")
 	}
 	if policy.PolicyID() == "" {
@@ -62,7 +64,7 @@ func resolvePolicy(d Deps) (core.BranchPolicy, error) {
 // readOnlyHistory intentionally hides concrete ledger mutation and lifecycle APIs.
 type readOnlyHistory struct{ core.ChainStore }
 type genesisHistory struct {
-	p core.BranchProtocol
+	p chaincap.BranchProtocol
 	b core.Block
 }
 

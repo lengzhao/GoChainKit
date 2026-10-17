@@ -5,8 +5,9 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	assetcap "github.com/lengzhao/GoChainKit/cap/asset"
+	"github.com/lengzhao/GoChainKit/cap/model"
 	"github.com/lengzhao/GoChainKit/core"
-	"github.com/lengzhao/GoChainKit/model"
 	"github.com/lengzhao/GoChainKit/model/asset"
 	"sort"
 )
@@ -85,7 +86,7 @@ func (executor *Executor) Execute(ctx context.Context, s core.StateReader, b cor
 	if e != nil {
 		return core.ExecutionResult{}, e
 	}
-	next, e := model.Apply(ctx, initial, transition)
+	next, e := core.ApplyStateChanges(ctx, initial, transition.Writes, transition.Deletes)
 	if e != nil {
 		return core.ExecutionResult{}, e
 	}
@@ -107,18 +108,18 @@ func (executor *Executor) Execute(ctx context.Context, s core.StateReader, b cor
 		if len(v.Header.Producer) != 32 {
 			return core.ExecutionResult{}, fmt.Errorf("currency producer must be a 32-byte address")
 		}
-		var to asset.Address
+		var to assetcap.Address
 		copy(to[:], v.Header.Producer)
 		if amount > 0 {
 			data := append([]byte("gochainkit/composed/mint/v1\x00"), p.binding...)
 			data = append(data, v.Header.Parent...)
 			data = binary.BigEndian.AppendUint64(data, v.Header.Height)
 			data = append(data, v.Header.Producer...)
-			credit, e := currency.Credit(ctx, stateReader{next, core.Commitment(string(stateHash(next)))}, asset.Mint{ID: core.ID(string(DoubleHash(data))), To: to, Amount: amount})
+			credit, e := currency.Credit(ctx, stateReader{next, core.Commitment(string(stateHash(next)))}, assetcap.Mint{ID: core.ID(string(DoubleHash(data))), To: to, Amount: amount})
 			if e != nil {
 				return core.ExecutionResult{}, e
 			}
-			next, e = model.Apply(ctx, next, credit)
+			next, e = core.ApplyStateChanges(ctx, next, credit.Writes, credit.Deletes)
 			if e != nil {
 				return core.ExecutionResult{}, e
 			}

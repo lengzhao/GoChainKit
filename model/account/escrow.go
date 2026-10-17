@@ -4,14 +4,15 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	assetcap "github.com/lengzhao/GoChainKit/cap/asset"
+	"github.com/lengzhao/GoChainKit/cap/model"
 	"github.com/lengzhao/GoChainKit/core"
-	"github.com/lengzhao/GoChainKit/model"
 	"github.com/lengzhao/GoChainKit/model/asset"
 )
 
 func escrowKey(id core.ID) string     { return "model/account/escrow/" + string(id) }
 func escrowUsedKey(id core.ID) string { return "model/account/escrow-used/" + string(id) }
-func (e *Engine) Lock(ctx context.Context, parent core.StateReader, lock asset.Lock) (model.Transition, error) {
+func (e *Engine) Lock(ctx context.Context, parent core.StateReader, lock assetcap.Lock) (model.Transition, error) {
 	if err := ctx.Err(); err != nil {
 		return model.Transition{}, err
 	}
@@ -39,7 +40,7 @@ func (e *Engine) Lock(ctx context.Context, parent core.StateReader, lock asset.L
 	record := binary.BigEndian.AppendUint64(append([]byte(nil), lock.Owner[:]...), lock.Amount)
 	return model.Transition{Writes: map[string][]byte{key(lock.Owner): encodeAccount(balance-lock.Amount, nonce), k: record}}, nil
 }
-func (e *Engine) Release(ctx context.Context, parent core.StateReader, release asset.Release) (model.Transition, error) {
+func (e *Engine) Release(ctx context.Context, parent core.StateReader, release assetcap.Release) (model.Transition, error) {
 	if err := ctx.Err(); err != nil {
 		return model.Transition{}, err
 	}
@@ -73,4 +74,4 @@ func (e *Engine) Release(ctx context.Context, parent core.StateReader, release a
 	return model.Transition{Writes: map[string][]byte{key(release.To): encodeAccount(balance, nonce), escrowUsedKey(release.ID): []byte{1}}, Deletes: []string{k}}, nil
 }
 
-var _ asset.Escrow = (*Engine)(nil)
+var _ assetcap.Escrow = (*Engine)(nil)

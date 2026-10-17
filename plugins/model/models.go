@@ -2,7 +2,7 @@
 package model
 
 import (
-	"github.com/lengzhao/GoChainKit/model"
+	"github.com/lengzhao/GoChainKit/cap/model"
 	"github.com/lengzhao/GoChainKit/model/account"
 	"github.com/lengzhao/GoChainKit/model/utxo"
 	"github.com/lengzhao/pluginkit"

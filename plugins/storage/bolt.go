@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/gob"
 	"fmt"
+	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/pluginkit"
 	db "go.etcd.io/bbolt"
@@ -26,7 +27,7 @@ type BoltStore struct {
 	owner       *core.LedgerIdentity
 	cfg         BoltConfig
 	p           core.LedgerProtocol
-	policy      core.BranchPolicy
+	policy      chaincap.BranchPolicy
 	db          *db.DB
 	stopped     bool
 	starting    bool
@@ -112,7 +113,7 @@ func (s *BoltStore) Start(ctx context.Context) (err error) {
 	}
 	desc := s.p.Protocol()
 	var genesisBranch branchNode
-	wp, _ := s.p.(core.BranchProtocol)
+	wp, _ := s.p.(chaincap.BranchProtocol)
 	isWork := s.policy != nil
 	if isWork {
 		genesisBranch, e = branchGenesis(ctx, wp, s.policy, g)

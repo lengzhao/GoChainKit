@@ -5,9 +5,10 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	assetcap "github.com/lengzhao/GoChainKit/cap/asset"
+	"github.com/lengzhao/GoChainKit/cap/model"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
-	"github.com/lengzhao/GoChainKit/model"
 	"github.com/lengzhao/GoChainKit/model/account"
 	"github.com/lengzhao/GoChainKit/model/asset"
 	"github.com/lengzhao/GoChainKit/model/utxo"
@@ -123,12 +124,12 @@ func TestComposedAccountUTXORealNetworkAndRestart(t *testing.T) {
 			ctx := context.Background()
 			key := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{6}, 32))
 			owner := asset.AddressOf(key[32:])
-			to := asset.Address{7}
-			miner := asset.Address{8}
+			to := assetcap.Address{7}
+			miner := assetcap.Address{8}
 			var engine model.Engine
 			var tx core.Transaction
 			if kind == "account" {
-				m, _ := account.New(account.Config{Network: "real-" + kind, Allocations: []asset.Allocation{{Address: owner, Amount: 100}}})
+				m, _ := account.New(account.Config{Network: "real-" + kind, Allocations: []assetcap.Allocation{{Address: owner, Amount: 100}}})
 				engine = m
 				raw := account.Transaction{Network: "real-" + kind, Nonce: 1, To: to, Amount: 30, Fee: 2}
 				if e := raw.Sign(key); e != nil {
@@ -136,7 +137,7 @@ func TestComposedAccountUTXORealNetworkAndRestart(t *testing.T) {
 				}
 				tx, _ = account.Wrap(raw)
 			} else if kind == "utxo" {
-				m, _ := utxo.New(utxo.Config{Network: "real-" + kind, Allocations: []asset.Allocation{{Address: owner, Amount: 100}}})
+				m, _ := utxo.New(utxo.Config{Network: "real-" + kind, Allocations: []assetcap.Allocation{{Address: owner, Amount: 100}}})
 				engine = m
 				raw := utxo.Transaction{Network: "real-" + kind, Inputs: []utxo.Input{{Previous: m.GenesisOutpoints()[0]}}, Outputs: []utxo.Output{{To: to, Amount: 30}, {To: owner, Amount: 68}}}
 				if e := raw.Sign(key); e != nil {

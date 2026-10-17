@@ -8,10 +8,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	assetcap "github.com/lengzhao/GoChainKit/cap/asset"
+	"github.com/lengzhao/GoChainKit/cap/model"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/jsoncodec"
-	"github.com/lengzhao/GoChainKit/model"
-	"github.com/lengzhao/GoChainKit/model/asset"
+
 	"math"
 	"math/big"
 	"sort"
@@ -28,7 +29,7 @@ type Protocol struct {
 	cfg        Config
 	engine     model.Engine
 	economics  Economics
-	currency   asset.Currency
+	currency   assetcap.Currency
 	rule       Rule
 	choice     Choice
 	descriptor core.ProtocolDescriptor
@@ -95,11 +96,11 @@ func New(c Config, engine model.Engine, rule Rule, choice Choice) (*Protocol, er
 		return nil, e
 	}
 	var economics Economics
-	var currency asset.Currency
+	var currency assetcap.Currency
 	if candidate, ok := rule.(Economics); ok && candidate.Enabled() {
 		economics = candidate
 		var compatible bool
-		currency, compatible = engine.(asset.Currency)
+		currency, compatible = engine.(assetcap.Currency)
 		if !compatible {
 			return nil, fmt.Errorf("economic rules require currency capability")
 		}

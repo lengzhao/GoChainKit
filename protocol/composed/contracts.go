@@ -62,7 +62,7 @@ type WorkRule interface {
 
 // Economics is optional and entirely separate from generic state execution.
 // A Rule supplies reward amounts as consensus semantics; Protocol applies them
-// through the model's optional asset.Currency capability. Fee burn/distribution
+// through the model's optional cap/asset.Currency capability. Fee burn/distribution
 // policies are separate extension concerns, not implicit additions to Reward.
 // Enabled distinguishes a no-reward/no-fee chain from a currency-based chain.
 // Capability activation is resolved once during protocol construction.

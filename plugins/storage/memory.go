@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/pluginkit"
 	"sync"
@@ -12,14 +13,14 @@ import (
 
 type MemoryConfig struct{}
 type Deps struct {
-	Protocol core.LedgerProtocol `json:"protocol"`
-	Policy   core.BranchPolicy   `json:"policy,omitempty"`
+	Protocol core.LedgerProtocol   `json:"protocol"`
+	Policy   chaincap.BranchPolicy `json:"policy,omitempty"`
 }
 type MemoryStore struct {
 	mu           sync.RWMutex
 	owner        *core.LedgerIdentity
 	p            core.LedgerProtocol
-	policy       core.BranchPolicy
+	policy       chaincap.BranchPolicy
 	branches     map[core.ID]branchNode
 	head         core.ID
 	blocks       map[core.ID][]byte
@@ -47,7 +48,7 @@ func NewMemory(_ MemoryConfig, d Deps) (*MemoryStore, error) {
 	}
 	store := &MemoryStore{owner: core.NewLedgerIdentity(), p: d.Protocol, policy: policy, head: g.ID, blocks: map[core.ID][]byte{g.ID: g.Block}, states: map[core.ID]map[string][]byte{g.ID: g.State}, roots: map[core.ID]core.Commitment{g.ID: g.Root}, transactions: map[core.ID]storedTransaction{}, receipts: map[core.ID]core.Receipt{}}
 	if policy != nil {
-		p := d.Protocol.(core.BranchProtocol)
+		p := d.Protocol.(chaincap.BranchProtocol)
 		n, e := branchGenesis(context.Background(), p, policy, g)
 		if e != nil {
 			return nil, e

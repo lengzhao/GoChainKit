@@ -87,18 +87,6 @@ type BlockValidator interface {
 	ValidateBlock(context.Context, ChainStore, Block, Block, ExecutionResult) error
 }
 
-// ProposalValidator checks an execution-bound finalized proposal before consensus
-// sealing. Storage always calls ValidateBlock and must reject unsealed proposals.
-// Protocols without this optional capability retain finalized-block validation.
-type ProposalValidator interface {
-	ValidateProposal(context.Context, ChainStore, Block, Block, ExecutionResult) error
-}
-
-// BlockSealer performs consensus proof production after execution finalization.
-type BlockSealer interface {
-	Seal(context.Context, Block) (Block, error)
-}
-
 // CandidateValidator checks execution-independent candidate binding before state
 // execution. A candidate anchored to a different canonical parent returns
 // ErrConflict. Malformed candidates and other protocol violations remain their
@@ -305,13 +293,4 @@ type ConsensusHost interface {
 // Consensus implementations must check extra semantic requirements explicitly.
 type Consensus interface {
 	Run(context.Context, ConsensusHost) error
-}
-type Message struct {
-	Peer     string
-	Protocol string
-	Payload  []byte
-}
-type Transport interface {
-	Run(context.Context, func(context.Context, Message) error) error
-	Broadcast(context.Context, Message) error
 }

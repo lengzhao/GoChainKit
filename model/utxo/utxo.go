@@ -9,9 +9,10 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	assetcap "github.com/lengzhao/GoChainKit/cap/asset"
+	"github.com/lengzhao/GoChainKit/cap/model"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/jsoncodec"
-	"github.com/lengzhao/GoChainKit/model"
 	"github.com/lengzhao/GoChainKit/model/asset"
 	"sort"
 )
@@ -25,7 +26,7 @@ type Input struct {
 	PublicKey, Signature []byte
 }
 type Output struct {
-	To     asset.Address
+	To     assetcap.Address
 	Amount uint64
 }
 type Transaction struct {
@@ -144,11 +145,11 @@ func Outpoints(tx core.Transaction) ([]Outpoint, error) {
 
 type Config struct {
 	Network     string
-	Allocations []asset.Allocation
+	Allocations []assetcap.Allocation
 }
 type Engine struct {
 	network     string
-	allocations []asset.Allocation
+	allocations []assetcap.Allocation
 	genesisID   [32]byte
 }
 
@@ -169,7 +170,7 @@ func New(c Config) (*Engine, error) {
 	}
 	data, _ := json.Marshal(c)
 	id := sha256.Sum256(append([]byte("gochainkit/utxo/genesis/v1\x00"), data...))
-	return &Engine{c.Network, append([]asset.Allocation(nil), c.Allocations...), id}, nil
+	return &Engine{c.Network, append([]assetcap.Allocation(nil), c.Allocations...), id}, nil
 }
 func (e *Engine) Protocol() core.ProtocolDescriptor {
 	return core.ProtocolDescriptor{Name: "utxo", Version: "1", Network: e.network}
@@ -343,7 +344,7 @@ func (e *Engine) Execute(ctx context.Context, parent core.StateReader, txs []cor
 	out.Effects = []model.Effect{asset.Fee(fees)}
 	return out, nil
 }
-func (e *Engine) Credit(ctx context.Context, parent core.StateReader, mint asset.Mint) (model.Transition, error) {
+func (e *Engine) Credit(ctx context.Context, parent core.StateReader, mint assetcap.Mint) (model.Transition, error) {
 	if err := ctx.Err(); err != nil {
 		return model.Transition{}, err
 	}
@@ -366,4 +367,4 @@ func (e *Engine) Credit(ctx context.Context, parent core.StateReader, mint asset
 	return model.Transition{Writes: map[string][]byte{k: encode(Output{mint.To, mint.Amount}), marker: []byte{1}}}, nil
 }
 
-var _ asset.Currency = (*Engine)(nil)
+var _ assetcap.Currency = (*Engine)(nil)

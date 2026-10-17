@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
 	"path/filepath"
 	"testing"
 
@@ -80,7 +81,7 @@ func TestBranchReorgReindexesSharedTransaction(t *testing.T) {
 		t.Run(backend, func(t *testing.T) {
 			ctx := context.Background()
 			p := workFormat{testprotocol.New("shared-index")}
-			var s core.BranchLedger
+			var s chaincap.BranchLedger
 			if backend == "memory" {
 				s, _ = NewMemory(MemoryConfig{}, Deps{Protocol: p})
 			} else {

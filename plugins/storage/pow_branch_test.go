@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
+	consensuscap "github.com/lengzhao/GoChainKit/cap/consensus"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/protocol/kv"
 	pow "github.com/lengzhao/GoChainKit/protocol/powkv"
@@ -12,7 +14,7 @@ import (
 	"testing"
 )
 
-func powChild(t *testing.T, p core.WorkProtocol, s core.BranchLedger, parent core.ID, nonce uint64, value string) (core.Block, core.ExecutionResult) {
+func powChild(t *testing.T, p consensuscap.WorkProtocol, s chaincap.BranchLedger, parent core.ID, nonce uint64, value string) (core.Block, core.ExecutionResult) {
 	t.Helper()
 	ctx := context.Background()
 	tx := pow.Transaction{ChainID: p.Protocol().Network, Nonce: nonce, Key: []byte("k"), Value: []byte(value)}
@@ -58,7 +60,7 @@ func TestPoWBranchStateAndDurability(t *testing.T) {
 	p, _ := pow.New(pow.Config{ChainID: "pow-dev"})
 	for _, kind := range []string{"memory", "bolt"} {
 		t.Run(kind, func(t *testing.T) {
-			var s core.BranchLedger
+			var s chaincap.BranchLedger
 			path := filepath.Join(t.TempDir(), "pow.db")
 			if kind == "memory" {
 				v, e := NewMemory(MemoryConfig{}, Deps{Protocol: p})

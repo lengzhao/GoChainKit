@@ -3,17 +3,18 @@ package powkv
 import (
 	"context"
 	"fmt"
+	consensuscap "github.com/lengzhao/GoChainKit/cap/consensus"
 	"github.com/lengzhao/GoChainKit/core"
 	kv "github.com/lengzhao/GoChainKit/protocol/kv"
 )
 
 type adaptedExecutor struct {
-	protocol core.WorkProtocol
+	protocol consensuscap.WorkProtocol
 	inner    core.Executor
 }
 
 // NewExecutor adapts an explicitly supplied KV executor to PoW block envelopes.
-func NewExecutor(p core.WorkProtocol, inner core.Executor) (core.Executor, error) {
+func NewExecutor(p consensuscap.WorkProtocol, inner core.Executor) (core.Executor, error) {
 	if p == nil || p.Protocol().Name != "powkv" || p.Protocol().Version != "1" {
 		return nil, fmt.Errorf("incompatible protocol")
 	}

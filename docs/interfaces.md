@@ -1,6 +1,6 @@
 # 模块与协议接口
 
-GoChainKit 的通用组件依赖接口与协议能力，不规定具体区块头、交易字段、签名算法、ID 长度或状态承诺算法。当前公共定义见 core/contracts.go。
+GoChainKit 的通用组件依赖接口与协议能力，不规定具体区块头、交易字段、签名算法、ID 长度或状态承诺算法。稳定基础定义见 core/contracts.go；分支、共识、网络、复制、模型及资产的可选契约见 cap 对应子包，不保留旧路径别名。详见 [能力分层](capabilities.md)。
 
 ## 对象与标识
 
@@ -99,6 +99,10 @@ composed 的执行统一通过 `composed.NewExecutor(protocol, history)` 创建�
 严格 JSON 解码 mechanics 复用 `internal/jsoncodec`；每种协议继续决定大小上限、是否要求规范字节及签名和交易语义。KV 保留原有严格解码策略，不能因公共助手而改变历史编码接受规则。
 
 
-`core.BlockImporter` 是验证、执行、分支提交及提交后交易池维护的独立能力，`core.Replicator` 是链追赶与交易传播的独立运行能力。两者都绑定协议和账本 owner。`importer/branch` 与 `sync/chain` 通过依赖图装配；PoW 调度器只依赖构块、封印和这些运行能力。同步插件拥有唯一网络消息 handler，不要求工作量证明能力。
+`cap/replication.BlockImporter` 是验证、执行、分支提交及提交后交易池维护的独立能力，`cap/replication.Replicator` 是链追赶与交易传播的独立运行能力。两者都绑定协议和账本 owner。`importer/branch` 与 `sync/chain` 通过依赖图装配；PoW 调度器只依赖构块、封印和这些运行能力。同步插件拥有唯一网络消息 handler，不要求工作量证明能力。
 
 Memory/Bolt 共享包内导入准备逻辑，后端分别持有原子提交和 CAS。正常导入只加载执行父块与规范链头的相关祖先，规范链交易和回执索引根据 Detached/Attached 增量更新；启动恢复仍全量核对。深链祖先遍历和全状态快照成本仍存在，不能据此承诺常数复杂度。
+
+## 扩展能力入口
+
+模型执行契约统一位于 `cap/model`，不保留旧 model 包接口别名。新增可选能力位于 `cap/<能力>`，具体接口状态、消费者和缺失能力处理见 [能力分层](capabilities.md)。这些草案不意味着已有 PoA、合约或引用体运行实现。

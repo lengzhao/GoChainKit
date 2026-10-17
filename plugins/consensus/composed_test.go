@@ -3,6 +3,7 @@ package consensus
 import (
 	"context"
 	"errors"
+	consensuscap "github.com/lengzhao/GoChainKit/cap/consensus"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/model/account"
 	"github.com/lengzhao/GoChainKit/plugins/builder"
@@ -18,7 +19,7 @@ import (
 )
 
 type countedSeal struct {
-	core.WorkProtocol
+	consensuscap.WorkProtocol
 	calls atomic.Int32
 }
 

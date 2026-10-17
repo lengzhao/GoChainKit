@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	consensuscap "github.com/lengzhao/GoChainKit/cap/consensus"
+	networkcap "github.com/lengzhao/GoChainKit/cap/network"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/plugins/builder"
 	"github.com/lengzhao/GoChainKit/plugins/mempool"
@@ -46,7 +48,7 @@ func (p *barrierCleanupPool) Remove(context.Context, []core.ID) error {
 }
 
 type nullPoWNetwork struct {
-	core.Network
+	networkcap.Network
 	descriptor core.ProtocolDescriptor
 }
 
@@ -110,7 +112,7 @@ func TestPoWShutdownPreservesCommittedCleanupFailure(t *testing.T) {
 	}
 }
 
-type powTestProtocol struct{ core.WorkProtocol }
+type powTestProtocol struct{ consensuscap.WorkProtocol }
 
 func (powTestProtocol) Protocol() core.ProtocolDescriptor {
 	return core.ProtocolDescriptor{Name: "test", Version: "1", Network: "test"}

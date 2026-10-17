@@ -4,6 +4,9 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
+	consensuscap "github.com/lengzhao/GoChainKit/cap/consensus"
+	replicationcap "github.com/lengzhao/GoChainKit/cap/replication"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/plugins/builder"
 	"github.com/lengzhao/GoChainKit/plugins/mempool"
@@ -22,7 +25,7 @@ func (importRules) ValidateCandidate(context.Context, core.ChainStore, core.Bloc
 }
 
 type snapshotLedger struct {
-	core.BranchLedger
+	chaincap.BranchLedger
 	reader    core.StateReader
 	importErr error
 }
@@ -54,7 +57,7 @@ func TestImporterMixedExecutionErrorRemainsLocal(t *testing.T) {
 	for _, signal := range []error{context.Canceled, core.ErrInvalidTransaction, core.ErrDeferredTransaction} {
 		imp := &branchImporter{ImportDeps: ImportDeps{Rules: importRules{}, Ledger: snapshotLedger{reader: errorReader{}}, Executor: errorExecutor{failure: errors.Join(signal, disk)}}}
 		err := imp.Import(context.Background(), powTestBlock("candidate"), nil)
-		var local *core.LocalServiceError
+		var local *replicationcap.LocalServiceError
 		if !errors.As(err, &local) || !errors.Is(err, disk) {
 			t.Fatalf("mixed %v lost local failure: %v", signal, err)
 		}
@@ -64,7 +67,7 @@ func TestImporterExecutionCancellationPreservesCloseFailure(t *testing.T) {
 	disk := errors.New("snapshot close failed")
 	imp := &branchImporter{ImportDeps: ImportDeps{Rules: importRules{}, Ledger: snapshotLedger{reader: errorReader{failure: disk}}, Executor: errorExecutor{failure: context.Canceled}}}
 	err := imp.Import(context.Background(), powTestBlock("candidate"), nil)
-	var local *core.LocalServiceError
+	var local *replicationcap.LocalServiceError
 	if !errors.As(err, &local) || !errors.Is(err, disk) {
 		t.Fatalf("close error lost during canceled execution: %v", err)
 	}
@@ -88,7 +91,7 @@ func TestImporterRecoversValidatedSideBranchTransaction(t *testing.T) {
 	base, _ := kv.New(kv.Config{ChainID: p.Protocol().Network})
 	inner, _ := kv.NewExecutor(base)
 	executor, _ := pow.NewExecutor(p, inner)
-	build := func(pool core.Mempool, ledger core.BranchLedger) (core.Block, core.ExecutionResult) {
+	build := func(pool core.Mempool, ledger chaincap.BranchLedger) (core.Block, core.ExecutionResult) {
 		sel, _ := selector.NewFIFO(selector.FIFOConfig{}, selector.Deps{Protocol: p})
 		b, e := builder.NewBasic(builder.BasicConfig{MaxTransactionBytes: 4096}, builder.Deps{Protocol: p, Ledger: ledger, Pool: pool, Executor: executor, Selector: sel})
 		if e != nil {
@@ -125,7 +128,7 @@ func TestImporterRecoversValidatedSideBranchTransaction(t *testing.T) {
 	}
 	b, _ := build(sidePool, side)
 	rules := nonWorkBranch{protocolContract: p, parent: p.Parent}
-	if _, ok := any(rules).(core.WorkProtocol); ok {
+	if _, ok := any(rules).(consensuscap.WorkProtocol); ok {
 		t.Fatal("test adapter leaks Work")
 	}
 	imp, e := NewImporter(ImportConfig{}, ImportDeps{Rules: rules, Ledger: local, Executor: executor, Pool: pool})
@@ -229,7 +232,7 @@ type failingAddPool struct {
 func (p failingAddPool) Add(context.Context, core.Transaction) error { return p.failure }
 
 type parentLookupFault struct {
-	core.BranchLedger
+	chaincap.BranchLedger
 	failure error
 }
 
@@ -238,7 +241,7 @@ func TestImporterMixedMissingParentIsLocal(t *testing.T) {
 	failure := errors.New("disk read failed")
 	imp := &branchImporter{ImportDeps: ImportDeps{Rules: importRules{}, Ledger: parentLookupFault{failure: errors.Join(core.ErrNotFound, failure)}}}
 	err := imp.Import(context.Background(), powTestBlock("candidate"), nil)
-	var local *core.LocalServiceError
+	var local *replicationcap.LocalServiceError
 	if !errors.As(err, &local) || !errors.Is(err, failure) {
 		t.Fatalf("local parent lookup fault hidden by NotFound: %v", err)
 	}
@@ -263,7 +266,7 @@ func TestSupervisedHistoryMixedMissingRemainsLocal(t *testing.T) {
 	_, blockErr := history.Block(context.Background(), "b")
 	_, receiptErr := history.Receipt(context.Background(), "tx")
 	for _, err := range []error{headErr, blockErr, receiptErr} {
-		var local *core.LocalServiceError
+		var local *replicationcap.LocalServiceError
 		if !errors.As(err, &local) || !errors.Is(err, failure) {
 			t.Fatalf("local history error hidden by NotFound: %v", err)
 		}

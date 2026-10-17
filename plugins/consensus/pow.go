@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	consensuscap "github.com/lengzhao/GoChainKit/cap/consensus"
+	replicationcap "github.com/lengzhao/GoChainKit/cap/replication"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/pluginkit"
 	"sync"
@@ -15,11 +17,11 @@ type PoWConfig struct {
 	Interval string `json:"interval"`
 }
 type PoWDeps struct {
-	Protocol    core.WorkProtocol  `json:"protocol"`
-	Ledger      core.LedgerReader  `json:"ledger"`
-	Builder     core.BlockBuilder  `json:"builder"`
-	Importer    core.BlockImporter `json:"importer"`
-	Replication core.Replicator    `json:"replication"`
+	Protocol    consensuscap.WorkProtocol    `json:"protocol"`
+	Ledger      core.LedgerReader            `json:"ledger"`
+	Builder     core.BlockBuilder            `json:"builder"`
+	Importer    replicationcap.BlockImporter `json:"importer"`
+	Replication replicationcap.Replicator    `json:"replication"`
 }
 type powConsensus struct {
 	PoWDeps
@@ -155,7 +157,7 @@ func transientPoW(e error) bool {
 		return true
 	}
 	switch v := e.(type) {
-	case *core.CommittedError, *core.LocalServiceError:
+	case *core.CommittedError, *replicationcap.LocalServiceError:
 		return false
 	case interface{ Unwrap() []error }:
 		for _, child := range v.Unwrap() {
@@ -175,7 +177,7 @@ func purePoWCancellation(e error) bool {
 		return false
 	}
 	switch v := e.(type) {
-	case *core.CommittedError, *core.TransactionError, *core.LocalServiceError:
+	case *core.CommittedError, *core.TransactionError, *replicationcap.LocalServiceError:
 		return false
 	case interface{ Unwrap() []error }:
 		children := v.Unwrap()

@@ -1,6 +1,6 @@
 # 共识规则与账本模型组合
 
-`protocol/composed` 是一种可选的协议封装族，不改变 core 的最小 Block/Transaction 接口。交易与状态规则由 `model.Engine` 提供；`Rule` 决定共识头、提案与证明验证；`Choice` 决定分数、选链和最终性。它们是独立依赖，不按模型名称或共识枚举分支。
+`protocol/composed` 是一种可选的协议封装族，不改变 core 的最小 Block/Transaction 接口。交易与状态规则由 `cap/model.Engine` 提供；`Rule` 决定共识头、提案与证明验证；`Choice` 决定分数、选链和最终性。它们是独立依赖，不按模型名称或共识枚举分支。
 
 ## 封装和执行
 
@@ -20,7 +20,7 @@ Header承诺交易、状态、回执及不可变Consensus字节；块ID为该Hea
 
 ## 可选资产适配
 
-只有启用Economics的规则才要求asset.Currency；组合执行器按模型FeeEffect取得手续费，按规则计算奖励，再通过Currency.Credit应用系统变更。金额相加检查溢出，系统mint标识绑定创世、父块、高度和生产者，状态变更统一应用显式删除语义。
+只有启用Economics的规则才要求cap/asset.Currency；组合执行器按模型FeeEffect取得手续费，按规则计算奖励，再通过Currency.Credit应用系统变更。金额相加检查溢出，系统mint标识绑定创世、父块、高度和生产者，状态变更统一应用显式删除语义。
 
 InitialReward大于零或currency为true会启用资产适配；currency=true可用于零区块奖励但收取手续费的链。普通非资产计数模型可使用关闭Economics的PoW规则，已有独立回归证明其不需要余额或UTXO。
 

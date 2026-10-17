@@ -10,24 +10,25 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	assetcap "github.com/lengzhao/GoChainKit/cap/asset"
+	"github.com/lengzhao/GoChainKit/cap/model"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/jsoncodec"
-	"github.com/lengzhao/GoChainKit/model"
 	"github.com/lengzhao/GoChainKit/model/asset"
 )
 
 type Config struct {
 	Network     string
-	Allocations []asset.Allocation
+	Allocations []assetcap.Allocation
 }
 type Engine struct {
 	network     string
-	allocations []asset.Allocation
+	allocations []assetcap.Allocation
 }
 type Transaction struct {
 	Network              string
 	Nonce                uint64
-	To                   asset.Address
+	To                   assetcap.Address
 	Amount, Fee          uint64
 	PublicKey, Signature []byte
 }
@@ -100,7 +101,7 @@ func New(c Config) (*Engine, error) {
 	if c.Network == "" || len(c.Network) > 128 {
 		return nil, fmt.Errorf("account network required")
 	}
-	seen := map[asset.Address]bool{}
+	seen := map[assetcap.Address]bool{}
 	var supply uint64
 	for _, a := range c.Allocations {
 		if seen[a.Address] || a.Amount == 0 {
@@ -113,16 +114,16 @@ func New(c Config) (*Engine, error) {
 			return nil, err
 		}
 	}
-	return &Engine{c.Network, append([]asset.Allocation(nil), c.Allocations...)}, nil
+	return &Engine{c.Network, append([]assetcap.Allocation(nil), c.Allocations...)}, nil
 }
 func (e *Engine) Protocol() core.ProtocolDescriptor {
 	return core.ProtocolDescriptor{Name: "account", Version: "1", Network: e.network}
 }
-func key(address asset.Address) string { return "model/account/address/" + string(address[:]) }
+func key(address assetcap.Address) string { return "model/account/address/" + string(address[:]) }
 func encodeAccount(balance, nonce uint64) []byte {
 	return binary.BigEndian.AppendUint64(binary.BigEndian.AppendUint64(nil, balance), nonce)
 }
-func read(state map[string][]byte, address asset.Address) (uint64, uint64, error) {
+func read(state map[string][]byte, address assetcap.Address) (uint64, uint64, error) {
 	data, ok := state[key(address)]
 	if !ok {
 		return 0, 0, nil
@@ -132,7 +133,7 @@ func read(state map[string][]byte, address asset.Address) (uint64, uint64, error
 	}
 	return binary.BigEndian.Uint64(data[:8]), binary.BigEndian.Uint64(data[8:]), nil
 }
-func Balance(ctx context.Context, s core.StateReader, address asset.Address) (uint64, error) {
+func Balance(ctx context.Context, s core.StateReader, address assetcap.Address) (uint64, error) {
 	data, err := s.Get(ctx, []byte(key(address)))
 	if errors.Is(err, core.ErrNotFound) {
 		return 0, nil
@@ -253,7 +254,7 @@ func (e *Engine) Execute(ctx context.Context, parent core.StateReader, txs []cor
 	out.Effects = []model.Effect{asset.Fee(fees)}
 	return out, nil
 }
-func (e *Engine) Credit(ctx context.Context, parent core.StateReader, mint asset.Mint) (model.Transition, error) {
+func (e *Engine) Credit(ctx context.Context, parent core.StateReader, mint assetcap.Mint) (model.Transition, error) {
 	if err := ctx.Err(); err != nil {
 		return model.Transition{}, err
 	}
@@ -279,4 +280,4 @@ func (e *Engine) Credit(ctx context.Context, parent core.StateReader, mint asset
 	return model.Transition{Writes: map[string][]byte{key(mint.To): encodeAccount(balance, nonce), marker: []byte{1}}}, nil
 }
 
-var _ asset.Currency = (*Engine)(nil)
+var _ assetcap.Currency = (*Engine)(nil)

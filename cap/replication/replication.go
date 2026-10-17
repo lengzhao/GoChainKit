@@ -1,23 +1,26 @@
-package core
+package replication
 
-import "context"
+import (
+	"context"
+	"github.com/lengzhao/GoChainKit/core"
+)
 
 // BlockImporter verifies, executes and atomically imports a branch block, then
 // maintains the mempool for a canonical switch. A supplied result is still fully
 // validated. CommittedError distinguishes committed maintenance failure.
 // Implementations serialize imports for one ledger owner.
 type BlockImporter interface {
-	ProtocolBound
-	LedgerBound
-	Import(context.Context, Block, *ExecutionResult) error
+	core.ProtocolBound
+	core.LedgerBound
+	Import(context.Context, core.Block, *core.ExecutionResult) error
 }
 
 // Replicator owns chain catch-up and transaction propagation, independently of
 // proof production. Exactly one owner installs the Network handler. Run blocks
 // until cancellation or a local service fault, and releases its workers.
 type Replicator interface {
-	ProtocolBound
-	LedgerBound
+	core.ProtocolBound
+	core.LedgerBound
 	Run(context.Context) error
 }
 

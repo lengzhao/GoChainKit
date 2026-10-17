@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	consensuscap "github.com/lengzhao/GoChainKit/cap/consensus"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/pluginkit"
 )
@@ -138,7 +139,7 @@ func (b *builder) Build(ctx context.Context, head core.ID) (core.Block, core.Exe
 		}
 		result.BlockID = block.ID()
 		validate := b.deps.Protocol.ValidateBlock
-		if proposals, ok := b.deps.Protocol.(core.ProposalValidator); ok {
+		if proposals, ok := b.deps.Protocol.(consensuscap.ProposalValidator); ok {
 			validate = proposals.ValidateProposal
 		}
 		if err := validate(ctx, b.deps.Ledger, parent, block, result); err != nil {

@@ -2,6 +2,7 @@ package replication
 
 import (
 	"context"
+	replicationcap "github.com/lengzhao/GoChainKit/cap/replication"
 	"github.com/lengzhao/GoChainKit/core"
 )
 
@@ -9,14 +10,14 @@ func localService(e error) error {
 	if e == nil || pureCancellation(e) {
 		return e
 	}
-	return &core.LocalServiceError{Cause: e}
+	return &replicationcap.LocalServiceError{Cause: e}
 }
 func pureCancellation(e error) bool {
 	if e == nil {
 		return false
 	}
 	switch v := e.(type) {
-	case *core.CommittedError, *core.TransactionError, *core.LocalServiceError:
+	case *core.CommittedError, *core.TransactionError, *replicationcap.LocalServiceError:
 		return false
 	case interface{ Unwrap() []error }:
 		children := v.Unwrap()
@@ -80,7 +81,7 @@ func onlyExpected(e error, leaf func(error) bool) bool {
 		return false
 	}
 	switch v := e.(type) {
-	case *core.CommittedError, *core.LocalServiceError:
+	case *core.CommittedError, *replicationcap.LocalServiceError:
 		return false
 	case *core.TransactionError:
 		return leaf(e)

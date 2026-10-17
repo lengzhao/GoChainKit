@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
+	replicationcap "github.com/lengzhao/GoChainKit/cap/replication"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/pluginkit"
 	"sync"
@@ -19,10 +21,10 @@ type ImportProtocol interface {
 	Transactions(core.Block) ([]core.Transaction, error)
 }
 type ImportDeps struct {
-	Rules    ImportProtocol    `json:"protocol"`
-	Ledger   core.BranchLedger `json:"ledger"`
-	Executor core.Executor     `json:"executor"`
-	Pool     core.Mempool      `json:"pool"`
+	Rules    ImportProtocol        `json:"protocol"`
+	Ledger   chaincap.BranchLedger `json:"ledger"`
+	Executor core.Executor         `json:"executor"`
+	Pool     core.Mempool          `json:"pool"`
 }
 type ImportConfig struct{}
 type branchImporter struct {
@@ -31,7 +33,7 @@ type branchImporter struct {
 }
 
 func init() { pluginkit.Register("importer/branch", NewImporter) }
-func NewImporter(_ ImportConfig, d ImportDeps) (core.BlockImporter, error) {
+func NewImporter(_ ImportConfig, d ImportDeps) (replicationcap.BlockImporter, error) {
 	if d.Rules == nil || d.Ledger == nil || d.Executor == nil || d.Pool == nil {
 		return nil, fmt.Errorf("import dependencies required")
 	}

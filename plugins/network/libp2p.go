@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	networkcap "github.com/lengzhao/GoChainKit/cap/network"
 	"io"
 	"os"
 	"path/filepath"
@@ -441,4 +442,4 @@ func (t *Transport) receive(stream net.Stream) {
 	}
 }
 
-var _ core.Network = (*Transport)(nil)
+var _ networkcap.Network = (*Transport)(nil)

@@ -4,9 +4,9 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	assetcap "github.com/lengzhao/GoChainKit/cap/asset"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/modeltest"
-	"github.com/lengzhao/GoChainKit/model"
 	"github.com/lengzhao/GoChainKit/model/asset"
 	"testing"
 )
@@ -15,9 +15,9 @@ func TestTransferFeesRewardsAndReplay(t *testing.T) {
 	ctx := context.Background()
 	key := ed25519.NewKeyFromSeed(make([]byte, 32))
 	sender := asset.AddressOf(key.Public().(ed25519.PublicKey))
-	recipient := asset.Address{1}
-	miner := asset.Address{2}
-	e, err := New(Config{Network: "accounts", Allocations: []asset.Allocation{{Address: sender, Amount: 100}}})
+	recipient := assetcap.Address{1}
+	miner := assetcap.Address{2}
+	e, err := New(Config{Network: "accounts", Allocations: []assetcap.Allocation{{Address: sender, Amount: 100}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestTransferFeesRewardsAndReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	next, err := model.Apply(ctx, state, result)
+	next, err := core.ApplyStateChanges(ctx, state, result.Writes, result.Deletes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,11 +54,11 @@ func TestTransferFeesRewardsAndReplay(t *testing.T) {
 	if err != nil || fees != 2 {
 		t.Fatal(fees, err)
 	}
-	minted, err := e.Credit(ctx, modeltest.Reader(next), asset.Mint{ID: "reward", To: miner, Amount: fees})
+	minted, err := e.Credit(ctx, modeltest.Reader(next), assetcap.Mint{ID: "reward", To: miner, Amount: fees})
 	if err != nil {
 		t.Fatal(err)
 	}
-	next, err = model.Apply(ctx, next, minted)
+	next, err = core.ApplyStateChanges(ctx, next, minted.Writes, minted.Deletes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestTransferFeesRewardsAndReplay(t *testing.T) {
 	if _, err := e.Execute(ctx, modeltest.Reader(next), []core.Transaction{tx}); !errors.Is(err, core.ErrInvalidTransaction) {
 		t.Fatal("replay accepted", err)
 	}
-	if _, err := e.Credit(ctx, modeltest.Reader(next), asset.Mint{ID: "reward", To: miner, Amount: fees}); err == nil {
+	if _, err := e.Credit(ctx, modeltest.Reader(next), assetcap.Mint{ID: "reward", To: miner, Amount: fees}); err == nil {
 		t.Fatal("duplicate mint accepted")
 	}
 	encoded, err := e.EncodeTransaction(tx)
@@ -86,13 +86,13 @@ func TestMintNamespaceCannotOverlapAccountAddress(t *testing.T) {
 	e, _ := New(Config{Network: "namespace"})
 	state, _ := e.Genesis(ctx)
 	id := core.ID("123456789012345678901234567")
-	var recipient asset.Address
+	var recipient assetcap.Address
 	copy(recipient[:], []byte("mint/"+string(id)))
-	change, err := e.Credit(ctx, modeltest.Reader(state), asset.Mint{ID: id, To: recipient, Amount: 7})
+	change, err := e.Credit(ctx, modeltest.Reader(state), assetcap.Mint{ID: id, To: recipient, Amount: 7})
 	if err != nil {
 		t.Fatal(err)
 	}
-	next, err := model.Apply(ctx, state, change)
+	next, err := core.ApplyStateChanges(ctx, state, change.Writes, change.Deletes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestSelfTransferAndInvalidStateTransitions(t *testing.T) {
 	ctx := context.Background()
 	key := ed25519.NewKeyFromSeed(make([]byte, 32))
 	owner := asset.AddressOf(key.Public().(ed25519.PublicKey))
-	e, _ := New(Config{Network: "self", Allocations: []asset.Allocation{{Address: owner, Amount: 100}}})
+	e, _ := New(Config{Network: "self", Allocations: []assetcap.Allocation{{Address: owner, Amount: 100}}})
 	state, _ := e.Genesis(ctx)
 	raw := Transaction{Network: "self", Nonce: 1, To: owner, Amount: 50, Fee: 3}
 	raw.Sign(key)
@@ -115,7 +115,7 @@ func TestSelfTransferAndInvalidStateTransitions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	next, err := model.Apply(ctx, state, result)
+	next, err := core.ApplyStateChanges(ctx, state, result.Writes, result.Deletes)
 	if err != nil {
 		t.Fatal(err)
 	}

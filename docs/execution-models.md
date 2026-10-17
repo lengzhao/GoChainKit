@@ -1,6 +1,6 @@
 # 可组合执行模型
 
-model.Engine 是共识无关的交易与状态转换接口，只要求身份、交易编解码/准入、创世状态和 Execute。它不要求余额、nonce、UTXO、权益、奖励、验证者或特定区块头。新模型可以自行定义交易格式和状态语义，沿用最小 core.Transaction/Block。
+`cap/model.Engine` 是共识无关的交易与状态转换接口，只要求身份、交易编解码/准入、创世状态和 Execute。它不要求余额、nonce、UTXO、权益、奖励、验证者或特定区块头。新模型可以自行定义交易格式和状态语义，沿用最小 core.Transaction/Block。
 
 Transition 返回 Writes、Deletes、Receipts 与模型自定 Effects。Apply 与存储共用 core.ApplyStateChanges：删除显式表达、nil/空值仍为存在的写入、写删相交或重复删除拒绝、保留父状态与字节所有权。组合层不能把未知 effect 当作余额或共识指令。
 
@@ -15,9 +15,9 @@ Transition 返回 Writes、Deletes、Receipts 与模型自定 Effects。Apply �
 
 ## 可选资产能力
 
-model/asset.Currency 在 Engine 外提供可信系统 Credit，用于由共识规则授权的奖励操作。此接口本身不判定奖励额度；组合规则必须先验证奖励与手续费，不能把它开放成任意用户mint入口。
+cap/asset.Currency 在 Engine 外提供可信系统 Credit，用于由共识规则授权的奖励操作。此接口本身不判定奖励额度；组合规则必须先验证奖励与手续费，不能把它开放成任意用户mint入口。
 
-model/asset.Escrow 是进一步可选的锁仓适配。账户实现扣可用余额并保留nonce；UTXO实现按规范键序选择所有者输出、消费输入并创建找零。锁仓状态不再可被普通转账花费，释放回到余额或UTXO，并记录永久使用标记，禁止同ID再次释放或复用。
+cap/asset.Escrow 是进一步可选的锁仓适配。账户实现扣可用余额并保留nonce；UTXO实现按规范键序选择所有者输出、消费输入并创建找零。锁仓状态不再可被普通转账花费，释放回到余额或UTXO，并记录永久使用标记，禁止同ID再次释放或复用。
 
 Lock/Release 是可信系统操作，调用的质押、托管或其他规则层须验签、确认资产所有权、验证释放条件和接收者。单独存在Escrow能力不构成DPoS，也不自动提供质押交易、选举或投票确认。
 

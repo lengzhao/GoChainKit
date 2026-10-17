@@ -5,8 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	assetcap "github.com/lengzhao/GoChainKit/cap/asset"
+	"github.com/lengzhao/GoChainKit/cap/model"
 	"github.com/lengzhao/GoChainKit/core"
-	"github.com/lengzhao/GoChainKit/model"
 	"github.com/lengzhao/GoChainKit/model/asset"
 	"sort"
 	"strings"
@@ -18,7 +19,7 @@ func systemOutpoint(domain string, id core.ID) Outpoint {
 	hash := sha256.Sum256(append([]byte(domain), []byte(id)...))
 	return Outpoint{TransactionID: hash}
 }
-func (e *Engine) Lock(ctx context.Context, parent core.StateReader, lock asset.Lock) (model.Transition, error) {
+func (e *Engine) Lock(ctx context.Context, parent core.StateReader, lock assetcap.Lock) (model.Transition, error) {
 	if err := ctx.Err(); err != nil {
 		return model.Transition{}, err
 	}
@@ -78,7 +79,7 @@ func (e *Engine) Lock(ctx context.Context, parent core.StateReader, lock asset.L
 	out.Writes[k] = binary.BigEndian.AppendUint64(append([]byte(nil), lock.Owner[:]...), lock.Amount)
 	return out, nil
 }
-func (e *Engine) Release(ctx context.Context, parent core.StateReader, release asset.Release) (model.Transition, error) {
+func (e *Engine) Release(ctx context.Context, parent core.StateReader, release assetcap.Release) (model.Transition, error) {
 	if err := ctx.Err(); err != nil {
 		return model.Transition{}, err
 	}
@@ -108,4 +109,4 @@ func (e *Engine) Release(ctx context.Context, parent core.StateReader, release a
 	return model.Transition{Writes: map[string][]byte{releasedKey: encode(Output{To: release.To, Amount: amount}), escrowUsedKey(release.ID): []byte{1}}, Deletes: []string{k}}, nil
 }
 
-var _ asset.Escrow = (*Engine)(nil)
+var _ assetcap.Escrow = (*Engine)(nil)

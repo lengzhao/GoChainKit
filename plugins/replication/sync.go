@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	networkcap "github.com/lengzhao/GoChainKit/cap/network"
+	replicationcap "github.com/lengzhao/GoChainKit/cap/replication"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/pluginkit"
 	"sync"
@@ -27,11 +29,11 @@ type SyncLedger interface {
 	core.LedgerBound
 }
 type SyncDeps struct {
-	Rules    SyncProtocol       `json:"protocol"`
-	Ledger   SyncLedger         `json:"ledger"`
-	Pool     core.Mempool       `json:"pool"`
-	Network  core.Network       `json:"network"`
-	Importer core.BlockImporter `json:"importer"`
+	Rules    SyncProtocol                 `json:"protocol"`
+	Ledger   SyncLedger                   `json:"ledger"`
+	Pool     core.Mempool                 `json:"pool"`
+	Network  networkcap.Network           `json:"network"`
+	Importer replicationcap.BlockImporter `json:"importer"`
 }
 type chainSync struct {
 	SyncDeps
@@ -49,7 +51,7 @@ type chainSync struct {
 }
 
 func init() { pluginkit.Register("sync/chain", NewSync) }
-func NewSync(c SyncConfig, d SyncDeps) (core.Replicator, error) {
+func NewSync(c SyncConfig, d SyncDeps) (replicationcap.Replicator, error) {
 	interval, e := time.ParseDuration(c.Interval)
 	if e != nil || interval <= 0 {
 		return nil, fmt.Errorf("positive sync interval required")
@@ -109,7 +111,7 @@ func (p *chainSync) Run(ctx context.Context) (returnErr error) {
 				cursor, e := p.syncPeer(ctx, peer, cursors[peer])
 				cursors[peer] = cursor
 				if e != nil {
-					var local *core.LocalServiceError
+					var local *replicationcap.LocalServiceError
 					var committed *core.CommittedError
 					if errors.As(e, &local) || errors.As(e, &committed) {
 						return e
@@ -183,7 +185,7 @@ func (p *chainSync) canonical(ctx context.Context) ([]core.Block, error) {
 }
 func (p *chainSync) handle(ctx context.Context, raw []byte) (out []byte, returnErr error) {
 	defer func() {
-		var local *core.LocalServiceError
+		var local *replicationcap.LocalServiceError
 		if !pureCancellation(returnErr) && errors.As(returnErr, &local) {
 			p.reportFatal(local)
 		}

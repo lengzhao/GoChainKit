@@ -4,9 +4,9 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	assetcap "github.com/lengzhao/GoChainKit/cap/asset"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/modeltest"
-	"github.com/lengzhao/GoChainKit/model"
 	"github.com/lengzhao/GoChainKit/model/asset"
 	"testing"
 )
@@ -15,8 +15,8 @@ func TestSpendDeletesInputPreservesChangeAndPaysFee(t *testing.T) {
 	ctx := context.Background()
 	key := ed25519.NewKeyFromSeed(make([]byte, 32))
 	owner := asset.AddressOf(key.Public().(ed25519.PublicKey))
-	recipient := asset.Address{1}
-	e, err := New(Config{Network: "utxos", Allocations: []asset.Allocation{{Address: owner, Amount: 100}}})
+	recipient := assetcap.Address{1}
+	e, err := New(Config{Network: "utxos", Allocations: []assetcap.Allocation{{Address: owner, Amount: 100}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestSpendDeletesInputPreservesChangeAndPaysFee(t *testing.T) {
 	if len(change.Deletes) != 1 {
 		t.Fatal("input not explicitly deleted")
 	}
-	next, err := model.Apply(ctx, state, change)
+	next, err := core.ApplyStateChanges(ctx, state, change.Writes, change.Deletes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,20 +84,20 @@ func TestChainedSpendAndUnauthorizedInput(t *testing.T) {
 	ctx := context.Background()
 	key := ed25519.NewKeyFromSeed(make([]byte, 32))
 	owner := asset.AddressOf(key.Public().(ed25519.PublicKey))
-	e, _ := New(Config{Network: "chain", Allocations: []asset.Allocation{{Address: owner, Amount: 100}}})
+	e, _ := New(Config{Network: "chain", Allocations: []assetcap.Allocation{{Address: owner, Amount: 100}}})
 	state, _ := e.Genesis(ctx)
 	first := Transaction{Network: "chain", Inputs: []Input{{Previous: e.GenesisOutpoints()[0]}}, Outputs: []Output{{To: owner, Amount: 98}}}
 	first.Sign(key)
 	tx1, _ := Wrap(first)
 	points, _ := Outpoints(tx1)
-	second := Transaction{Network: "chain", Inputs: []Input{{Previous: points[0]}}, Outputs: []Output{{To: asset.Address{2}, Amount: 95}}}
+	second := Transaction{Network: "chain", Inputs: []Input{{Previous: points[0]}}, Outputs: []Output{{To: assetcap.Address{2}, Amount: 95}}}
 	second.Sign(key)
 	tx2, _ := Wrap(second)
 	change, err := e.Execute(ctx, modeltest.Reader(state), []core.Transaction{tx1, tx2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	next, err := model.Apply(ctx, state, change)
+	next, err := core.ApplyStateChanges(ctx, state, change.Writes, change.Deletes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestRepeatedSpendOfIntermediateOutputIsRejected(t *testing.T) {
 	ctx := context.Background()
 	key := ed25519.NewKeyFromSeed(make([]byte, 32))
 	owner := asset.AddressOf(key.Public().(ed25519.PublicKey))
-	e, _ := New(Config{Network: "intermediate", Allocations: []asset.Allocation{{Address: owner, Amount: 100}}})
+	e, _ := New(Config{Network: "intermediate", Allocations: []assetcap.Allocation{{Address: owner, Amount: 100}}})
 	state, _ := e.Genesis(ctx)
 	first := Transaction{Network: "intermediate", Inputs: []Input{{Previous: e.GenesisOutpoints()[0]}}, Outputs: []Output{{To: owner, Amount: 98}}}
 	first.Sign(key)
@@ -138,7 +138,7 @@ func TestRepeatedSpendOfIntermediateOutputIsRejected(t *testing.T) {
 	second := Transaction{Network: "intermediate", Inputs: []Input{{Previous: points[0]}}, Outputs: []Output{{To: owner, Amount: 95}}}
 	second.Sign(key)
 	tx2, _ := Wrap(second)
-	third := Transaction{Network: "intermediate", Inputs: []Input{{Previous: points[0]}}, Outputs: []Output{{To: asset.Address{3}, Amount: 94}}}
+	third := Transaction{Network: "intermediate", Inputs: []Input{{Previous: points[0]}}, Outputs: []Output{{To: assetcap.Address{3}, Amount: 94}}}
 	third.Sign(key)
 	tx3, _ := Wrap(third)
 	_, err := e.Execute(ctx, modeltest.Reader(state), []core.Transaction{tx1, tx2, tx3})

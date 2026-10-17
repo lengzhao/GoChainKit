@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
 	"path/filepath"
@@ -91,7 +92,7 @@ func TestDeletionSurvivesBranchReorgAndRecovery(t *testing.T) {
 			p := linearFormat{testprotocol.New("delete-branches")}
 			policy := heightPolicy{p: p}
 			path := filepath.Join(t.TempDir(), "fork.db")
-			var s core.BranchLedger
+			var s chaincap.BranchLedger
 			if disk {
 				v, e := NewBolt(BoltConfig{Path: path}, Deps{Protocol: p, Policy: policy})
 				if e != nil {

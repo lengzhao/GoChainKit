@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
 	"math/big"
@@ -26,7 +27,7 @@ func TestBranchReorg(t *testing.T) {
 		t.Run(backend, func(t *testing.T) {
 			ctx := context.Background()
 			p := workFormat{testprotocol.New("branches")}
-			var s core.BranchLedger
+			var s chaincap.BranchLedger
 			path := filepath.Join(t.TempDir(), "branches.db")
 			if backend == "memory" {
 				s, _ = NewMemory(MemoryConfig{}, Deps{Protocol: p})

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
 	"github.com/lengzhao/GoChainKit/core"
 	db "go.etcd.io/bbolt"
 	"reflect"
@@ -23,7 +24,7 @@ type branchPlan struct {
 	Receipts           map[core.ID]core.Receipt
 }
 
-func branchGenesis(ctx context.Context, p core.BranchProtocol, policy core.BranchPolicy, g preparedCommit) (branchNode, error) {
+func branchGenesis(ctx context.Context, p chaincap.BranchProtocol, policy chaincap.BranchPolicy, g preparedCommit) (branchNode, error) {
 	b, e := decodeStoredBlock(p, g.Block, g.ID)
 	if e != nil {
 		return branchNode{}, e
@@ -48,7 +49,7 @@ func branchGenesis(ctx context.Context, p core.BranchProtocol, policy core.Branc
 	}
 	return branchNode{Score: bytes.Clone(score), Finalized: final, Prepared: g}, nil
 }
-func branchCandidate(ctx context.Context, p core.BranchProtocol, policy core.BranchPolicy, chain core.LedgerReader, parent core.ID, b core.Block, r core.ExecutionResult, graph map[core.ID]branchNode) (branchNode, error) {
+func branchCandidate(ctx context.Context, p chaincap.BranchProtocol, policy chaincap.BranchPolicy, chain core.LedgerReader, parent core.ID, b core.Block, r core.ExecutionResult, graph map[core.ID]branchNode) (branchNode, error) {
 	ancestor, ok := graph[parent]
 	if !ok {
 		return branchNode{}, core.ErrNotFound
@@ -116,7 +117,7 @@ func branchPath(graph map[core.ID]branchNode, tip core.ID) ([]core.ID, error) {
 	}
 	return path, nil
 }
-func planBranch(ctx context.Context, p core.BranchProtocol, policy core.BranchPolicy, chain core.ChainStore, graph map[core.ID]branchNode, old, id core.ID) (branchPlan, error) {
+func planBranch(ctx context.Context, p chaincap.BranchProtocol, policy chaincap.BranchPolicy, chain core.ChainStore, graph map[core.ID]branchNode, old, id core.ID) (branchPlan, error) {
 	out := branchPlan{Head: old}
 	oldBlock, e := decodeStoredBlock(p, graph[old].Prepared.Block, old)
 	if e != nil {
@@ -195,8 +196,8 @@ func planBranch(ctx context.Context, p core.BranchProtocol, policy core.BranchPo
 	}
 	return out, nil
 }
-func branchChange(p core.BranchProtocol, graph map[core.ID]branchNode, old core.ID, plan branchPlan) (core.BranchChange, error) {
-	out := core.BranchChange{OldHead: old, NewHead: plan.Head}
+func branchChange(p chaincap.BranchProtocol, graph map[core.ID]branchNode, old core.ID, plan branchPlan) (chaincap.BranchChange, error) {
+	out := chaincap.BranchChange{OldHead: old, NewHead: plan.Head}
 	for _, id := range plan.Detached {
 		b, e := decodeStoredBlock(p, graph[id].Prepared.Block, id)
 		if e != nil {
@@ -217,10 +218,10 @@ func branchChange(p core.BranchProtocol, graph map[core.ID]branchNode, old core.
 // prepareBranchImport shares validation and planning while backends retain ownership
 // of their atomic commit and head compare-and-swap. Published branch records are
 // immutable; loading ancestors on demand needs no lock across policy callbacks.
-func prepareBranchImport(ctx context.Context, p core.BranchProtocol, policy core.BranchPolicy, chain core.LedgerReader, head, parent core.ID, b core.Block, r core.ExecutionResult, linear bool, load func(core.ID) (branchNode, error)) (branchNode, branchPlan, core.BranchChange, error) {
+func prepareBranchImport(ctx context.Context, p chaincap.BranchProtocol, policy chaincap.BranchPolicy, chain core.LedgerReader, head, parent core.ID, b core.Block, r core.ExecutionResult, linear bool, load func(core.ID) (branchNode, error)) (branchNode, branchPlan, chaincap.BranchChange, error) {
 	var empty branchNode
 	var plan branchPlan
-	var change core.BranchChange
+	var change chaincap.BranchChange
 	if b == nil {
 		return empty, plan, change, fmt.Errorf("nil block")
 	}
@@ -267,13 +268,13 @@ func prepareBranchImport(ctx context.Context, p core.BranchProtocol, policy core
 	return n, plan, change, e
 }
 
-func (s *MemoryStore) Import(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) (core.BranchChange, error) {
+func (s *MemoryStore) Import(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) (chaincap.BranchChange, error) {
 	return s.importBlock(ctx, parent, b, r, false)
 }
-func (s *MemoryStore) importBlock(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult, linear bool) (core.BranchChange, error) {
-	p, ok := s.p.(core.BranchProtocol)
+func (s *MemoryStore) importBlock(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult, linear bool) (chaincap.BranchChange, error) {
+	p, ok := s.p.(chaincap.BranchProtocol)
 	if !ok || s.policy == nil {
-		return core.BranchChange{}, fmt.Errorf("branch protocol and policy required")
+		return chaincap.BranchChange{}, fmt.Errorf("branch protocol and policy required")
 	}
 	s.mu.RLock()
 	head := s.head
@@ -322,17 +323,17 @@ func (s *MemoryStore) importBlock(ctx context.Context, parent core.ID, b core.Bl
 	}
 	return change, nil
 }
-func (s *BoltStore) Import(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) (core.BranchChange, error) {
+func (s *BoltStore) Import(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) (chaincap.BranchChange, error) {
 	return s.importBlock(ctx, parent, b, r, false)
 }
-func (s *BoltStore) importBlock(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult, linear bool) (core.BranchChange, error) {
-	p, ok := s.p.(core.BranchProtocol)
+func (s *BoltStore) importBlock(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult, linear bool) (chaincap.BranchChange, error) {
+	p, ok := s.p.(chaincap.BranchProtocol)
 	if !ok || s.policy == nil {
-		return core.BranchChange{}, fmt.Errorf("branch protocol and policy required")
+		return chaincap.BranchChange{}, fmt.Errorf("branch protocol and policy required")
 	}
 	head, e := s.Head(ctx)
 	if e != nil {
-		return core.BranchChange{}, e
+		return chaincap.BranchChange{}, e
 	}
 	load := func(id core.ID) (branchNode, error) {
 		var n branchNode
@@ -434,7 +435,7 @@ func (s *BoltStore) commitBranch(ctx context.Context, tx *db.Tx, expected core.I
 }
 
 // validateBranches revalidates every stored fork before publishing the database.
-func (s *BoltStore) validateBranches(ctx context.Context, p core.BranchProtocol, g preparedCommit) error {
+func (s *BoltStore) validateBranches(ctx context.Context, p chaincap.BranchProtocol, g preparedCommit) error {
 	graph, head, e := s.branchGraph(ctx)
 	if e != nil {
 		return e

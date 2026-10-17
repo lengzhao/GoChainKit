@@ -5,9 +5,10 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	consensuscap "github.com/lengzhao/GoChainKit/cap/consensus"
+	"github.com/lengzhao/GoChainKit/cap/model"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
-	"github.com/lengzhao/GoChainKit/model"
 	"github.com/lengzhao/GoChainKit/plugins/storage"
 	"github.com/lengzhao/GoChainKit/protocol/composed"
 	pow "github.com/lengzhao/GoChainKit/rules/pow"
@@ -97,7 +98,7 @@ func TestNonCurrencyModelAndOptionalContext(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	if _, fake := any(generic).(core.WorkProtocol); fake {
+	if _, fake := any(generic).(consensuscap.WorkProtocol); fake {
 		t.Fatal("base protocol falsely advertises work capability")
 	}
 	envelope, _ := composed.Unwrap(b)

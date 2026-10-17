@@ -14,7 +14,8 @@
 
 - `core` 中的 ID、Commitment 与对象接口：不限定长度、字段、签名或区块拓扑，不依赖默认协议。
 - `protocol/<name>`：具体链的格式、编解码与规则；默认 KV 类型位于 `protocol/kv`。
-- `core`：领域接口与错误契约，可依赖公共类型，不依赖插件实现。
+- `core`：稳定的格式无关基础接口与错误契约，不依赖扩展或插件实现。
+- `cap/<capability>`：可演进的扩展能力契约，只依赖 core 和必要 cap；模型执行契约以 cap/model 为准。
 - `runtime/<capability>`：确有多个消费者需要的共享实现，不负责插件注册。
 - `plugins/<capability>/<implementation>`：配置适配、构造、注册及具体实现。
 - `node`：链运行协调与生命周期。普通协调代码依赖接口；若注册为根插件，将注册适配放在 `plugins/node/default`。
@@ -23,7 +24,7 @@
 
 生产插件包之间不得相互 import，包括为调用另一插件的 New 而建立的依赖。用 Deps 注入接口；共享算法提取到 runtime。仅 assembly、聚合注册包和集成测试可直接导入多个插件包。
 
-AgentKit 使用根包和 cap 放置契约；本项目通过 core 定义通用契约，通过 protocol 隔离具体格式。当前接口以 [模块与协议接口](interfaces.md) 为准。
+AgentKit 使用根包和 cap 放置契约；本项目通过 core 定义通用契约、cap 定义可选扩展，通过 protocol 隔离具体格式。详见 [能力分层](capabilities.md)。当前接口以 [模块与协议接口](interfaces.md) 为准。
 
 ## 2 Go 编程习惯
 

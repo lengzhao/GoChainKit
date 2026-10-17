@@ -3,6 +3,7 @@ package consensus
 import (
 	"context"
 	"errors"
+	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
 	"github.com/lengzhao/GoChainKit/core"
 	"testing"
 )
@@ -35,7 +36,7 @@ func TestPoWDependsOnIndependentReplication(t *testing.T) {
 }
 
 type identityLedger struct {
-	core.BranchLedger
+	chaincap.BranchLedger
 	owner *core.LedgerIdentity
 }
 

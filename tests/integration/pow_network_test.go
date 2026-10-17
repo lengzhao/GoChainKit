@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	consensuscap "github.com/lengzhao/GoChainKit/cap/consensus"
 	"github.com/lengzhao/GoChainKit/core"
 	runtime "github.com/lengzhao/GoChainKit/node"
 	"github.com/lengzhao/GoChainKit/plugins/builder"
@@ -31,10 +32,10 @@ type powTestNode struct {
 	done    chan error
 }
 
-func startPoWNode(t *testing.T, p core.WorkProtocol, path string) *powTestNode {
+func startPoWNode(t *testing.T, p consensuscap.WorkProtocol, path string) *powTestNode {
 	return startPoWNodeMode(t, p, path, false)
 }
-func startPoWNodeMode(t *testing.T, p core.WorkProtocol, path string, mining bool) *powTestNode {
+func startPoWNodeMode(t *testing.T, p consensuscap.WorkProtocol, path string, mining bool) *powTestNode {
 	t.Helper()
 	s, e := store.NewBolt(store.BoltConfig{Path: filepath.Join(path, "chain.db")}, store.Deps{Protocol: p})
 	if e != nil {
@@ -113,7 +114,7 @@ func eventuallyPoW(t *testing.T, check func() bool) {
 	}
 	t.Fatal("PoW network condition timed out")
 }
-func signedPoW(t *testing.T, p core.WorkProtocol, sender byte, value string) core.Transaction {
+func signedPoW(t *testing.T, p consensuscap.WorkProtocol, sender byte, value string) core.Transaction {
 	t.Helper()
 	seed := make([]byte, 32)
 	seed[0] = sender

@@ -1,6 +1,6 @@
 # 组合协议抽象与接口评估
 
-日期：2026 年 10 月 17 日。本文从抽象与接口定义层面评估 `protocol/composed` 及其关联抽象（`core` 能力接口、`model.Engine`、`Rule`、`Choice`），给出后续建议。除特别说明外，建议尚未实现；现状描述以当前代码为准。
+日期：2026 年 10 月 17 日。本文从抽象与接口定义层面评估 `protocol/composed` 及其关联抽象（`core` 能力接口、`cap/model.Engine`、`Rule`、`Choice`），给出后续建议。除特别说明外，建议尚未实现；现状描述以当前代码为准。
 
 ## 抽象分层现状
 
@@ -13,8 +13,8 @@ flowchart TD
     end
 
     subgraph domain[领域抽象]
-        ENG[model.Engine 交易与状态语义]
-        CTXENG[model.ContextualEngine 可选上下文执行]
+        ENG[cap/model.Engine 交易与状态语义]
+        CTXENG[cap/model.ContextualEngine 可选上下文执行]
         RULE[Rule 共识头 提案与证明验证]
         CHOICE[Choice 分数 选链 最终性]
         SEAL[SealingRule 可选封印]
@@ -43,7 +43,7 @@ flowchart TD
 三个设计决策构成当前抽象的骨架：
 
 1. **core 不规定格式**。`Transaction`/`Block` 只要求稳定 ID；header、账户、nonce、父块拓扑全部留在具体协议。
-2. **组合而非枚举**。`Protocol` 由 Engine、Rule、Choice 三个独立依赖装配，不按模型名或共识名分支；缺能力在装配时拒绝（如 Economics 要求 `asset.Currency`）。
+2. **组合而非枚举**。`Protocol` 由 Engine、Rule、Choice 三个独立依赖装配，不按模型名或共识名分支；缺能力在装配时拒绝（如 Economics 要求 `cap/asset.Currency`）。
 3. **能力按可选性分层**。`Rule` 是必要能力；`SealingRule`、`WorkRule`、`Economics`、`ContextualEngine` 是可选增量，旧实现无需空实现这些方法。
 
 这些决策与 [模块与协议接口](interfaces.md)、[开发规范](development-conventions.md) 一致，应继续保持。
@@ -82,15 +82,15 @@ flowchart TD
 
 ### 2 收敛 Economics 的类型断言路径
 
-现状：`protocol.go` 构造时检查「Economics 启用则 Engine 必须实现 `asset.Currency`」，`executor.go` 执行期再次断言。两个检查点重复，且执行期的 `p.engine.(asset.Currency)` 依赖构造期检查不变。
+现状：`protocol.go` 构造时检查「Economics 启用则 Engine 必须实现 `cap/asset.Currency`」，`executor.go` 执行期再次断言。两个检查点重复，且执行期的 `p.engine.(asset.Currency)` 依赖构造期检查不变。
 
-建议：在 `New` 中完成能力解析后，把 `asset.Currency` 存为 `Protocol` 的显式字段（可为 nil），执行期只读取该字段。断言点收敛到一处，能力组合在构造时定型，也便于后续增加其他可选资产能力（如 Escrow 适配）时复用同一模式。
+建议：在 `New` 中完成能力解析后，把 `cap/asset.Currency` 存为 `Protocol` 的显式字段（可为 nil），执行期只读取该字段。断言点收敛到一处，能力组合在构造时定型，也便于后续增加其他可选资产能力（如 Escrow 适配）时复用同一模式。
 
 ### 3 明确 Economics 的语义归属
 
 现状：`Economics` 接口（`Enabled`/`Reward`）定义在 composed 包，但只有「Rule 实现它」才生效——这是隐含约定，接口本身没有说明为什么奖励额度属于规则而非模型。
 
-建议：在注释中写明设计理由并考虑命名强化：奖励金额是**共识规则**的语义（如 PoW 减半计划），发放通道是**模型能力**（`asset.Currency.Credit`）。因此 `Economics` 必须由 Rule 提供、由 Protocol 消费，模型不决定奖励额度。若未来出现模型侧费用规则（如燃烧比例），应另立接口，不并入 Economics。
+建议：在注释中写明设计理由并考虑命名强化：奖励金额是**共识规则**的语义（如 PoW 减半计划），发放通道是**模型能力**（`cap/asset.Currency.Credit`）。因此 `Economics` 必须由 Rule 提供、由 Protocol 消费，模型不决定奖励额度。若未来出现模型侧费用规则（如燃烧比例），应另立接口，不并入 Economics。
 
 ### 4 执行上下文的可选能力登记
 

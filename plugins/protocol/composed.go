@@ -3,8 +3,9 @@ package protocol
 import (
 	"encoding/hex"
 	"fmt"
+	consensuscap "github.com/lengzhao/GoChainKit/cap/consensus"
+	"github.com/lengzhao/GoChainKit/cap/model"
 	"github.com/lengzhao/GoChainKit/core"
-	"github.com/lengzhao/GoChainKit/model"
 	"github.com/lengzhao/GoChainKit/protocol/composed"
 	"github.com/lengzhao/pluginkit"
 )
@@ -39,7 +40,7 @@ func NewComposed(c ComposedConfig, d ComposedDeps) (core.Protocol, error) {
 	}
 	return composed.New(cfg, d.Model, d.Rule, d.Choice)
 }
-func NewComposedPoW(c ComposedConfig, d ComposedPoWDeps) (core.WorkProtocol, error) {
+func NewComposedPoW(c ComposedConfig, d ComposedPoWDeps) (consensuscap.WorkProtocol, error) {
 	cfg, e := composedConfig(c)
 	if e != nil {
 		return nil, e

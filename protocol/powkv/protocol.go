@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	consensuscap "github.com/lengzhao/GoChainKit/cap/consensus"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/jsoncodec"
 	kv "github.com/lengzhao/GoChainKit/protocol/kv"
@@ -77,7 +78,7 @@ func UnwrapBlock(b core.Block) (Block, error) {
 	}
 	return v.value.Clone(), nil
 }
-func New(c Config) (core.WorkProtocol, error) {
+func New(c Config) (consensuscap.WorkProtocol, error) {
 	if c.ChainID == "" || len(c.ChainID) > MaxChainIDBytes {
 		return nil, fmt.Errorf("invalid chainID")
 	}

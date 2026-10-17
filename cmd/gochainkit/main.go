@@ -5,7 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"github.com/lengzhao/GoChainKit/assembly"
-	"github.com/lengzhao/GoChainKit/core"
+	networkcap "github.com/lengzhao/GoChainKit/cap/network"
+
 	_ "github.com/lengzhao/GoChainKit/plugins/all"
 	"os"
 	"os/signal"
@@ -42,9 +43,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	networks := map[string]core.Network{}
+	networks := map[string]networkcap.Network{}
 	for _, instance := range result.Instances {
-		if network, ok := instance.Value.(core.Network); ok {
+		if network, ok := instance.Value.(networkcap.Network); ok {
 			networks[instance.ID] = network
 		}
 	}

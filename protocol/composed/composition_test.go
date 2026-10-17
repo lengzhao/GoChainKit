@@ -5,8 +5,9 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	assetcap "github.com/lengzhao/GoChainKit/cap/asset"
+	"github.com/lengzhao/GoChainKit/cap/model"
 	"github.com/lengzhao/GoChainKit/core"
-	"github.com/lengzhao/GoChainKit/model"
 	"github.com/lengzhao/GoChainKit/model/account"
 	"github.com/lengzhao/GoChainKit/model/asset"
 	"github.com/lengzhao/GoChainKit/model/utxo"
@@ -24,13 +25,13 @@ func TestPoWAccountUTXOReorgRecovery(t *testing.T) {
 			ctx := context.Background()
 			key := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{1}, 32))
 			owner := asset.AddressOf(key[32:])
-			recipient := asset.Address{2}
-			miner := asset.Address{3}
+			recipient := assetcap.Address{2}
+			miner := assetcap.Address{3}
 			var engine model.Engine
 			var tx core.Transaction
 			var input utxo.Outpoint
 			if kind == "account" {
-				m, e := account.New(account.Config{Network: "mix", Allocations: []asset.Allocation{{Address: owner, Amount: 100}}})
+				m, e := account.New(account.Config{Network: "mix", Allocations: []assetcap.Allocation{{Address: owner, Amount: 100}}})
 				if e != nil {
 					t.Fatal(e)
 				}
@@ -44,7 +45,7 @@ func TestPoWAccountUTXOReorgRecovery(t *testing.T) {
 				}
 				engine = m
 			} else {
-				m, e := utxo.New(utxo.Config{Network: "mix", Allocations: []asset.Allocation{{Address: owner, Amount: 100}}})
+				m, e := utxo.New(utxo.Config{Network: "mix", Allocations: []assetcap.Allocation{{Address: owner, Amount: 100}}})
 				if e != nil {
 					t.Fatal(e)
 				}

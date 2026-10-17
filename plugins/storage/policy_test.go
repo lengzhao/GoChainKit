@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
 	"math/big"
@@ -43,7 +44,7 @@ func TestNonWorkPolicyAndFinality(t *testing.T) {
 			p := linearFormat{testprotocol.New("policy")}
 			policy := heightPolicy{p: p, final: true}
 			path := filepath.Join(t.TempDir(), "policy.db")
-			var s core.BranchLedger
+			var s chaincap.BranchLedger
 			if disk {
 				v, e := NewBolt(BoltConfig{Path: path}, Deps{Protocol: p, Policy: policy})
 				if e != nil {
@@ -132,8 +133,8 @@ func TestCanonicalFinalityCannotBeForgottenAcrossSwitch(t *testing.T) {
 			p := linearFormat{testprotocol.New("delayed-finality")}
 			policy := delayedFinalityPolicy{heightPolicy{p: p}}
 			path := filepath.Join(t.TempDir(), "finality.db")
-			var s core.BranchLedger
-			open := func() core.BranchLedger {
+			var s chaincap.BranchLedger
+			open := func() chaincap.BranchLedger {
 				if !disk {
 					v, e := NewMemory(MemoryConfig{}, Deps{Protocol: p, Policy: policy})
 					if e != nil {

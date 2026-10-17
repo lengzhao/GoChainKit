@@ -5,6 +5,10 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"errors"
+	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
+	consensuscap "github.com/lengzhao/GoChainKit/cap/consensus"
+	networkcap "github.com/lengzhao/GoChainKit/cap/network"
+	replicationcap "github.com/lengzhao/GoChainKit/cap/replication"
 	"github.com/lengzhao/GoChainKit/core"
 	pow "github.com/lengzhao/GoChainKit/protocol/powkv"
 	"testing"
@@ -26,7 +30,7 @@ func TestPoWWirePreservesBinaryID(t *testing.T) {
 	}
 }
 
-type powTestProtocol struct{ core.WorkProtocol }
+type powTestProtocol struct{ consensuscap.WorkProtocol }
 
 func (powTestProtocol) Protocol() core.ProtocolDescriptor {
 	return core.ProtocolDescriptor{Name: "test", Version: "1", Network: "test"}
@@ -39,7 +43,7 @@ func (powTestProtocol) Parent(b core.Block) (core.ID, error) {
 }
 func (powTestProtocol) EncodeBlock(b core.Block) ([]byte, error) { return []byte(b.ID()), nil }
 
-type powTestLedger struct{ core.BranchLedger }
+type powTestLedger struct{ chaincap.BranchLedger }
 
 func (powTestLedger) Head(context.Context) (core.ID, error) { return "tip", nil }
 func (powTestLedger) Block(_ context.Context, id core.ID) (core.Block, error) {
@@ -103,7 +107,7 @@ func TestPoWLargeTransactionBudgetAndRotation(t *testing.T) {
 }
 
 type failingPoWLedger struct {
-	core.BranchLedger
+	chaincap.BranchLedger
 	err error
 }
 
@@ -112,13 +116,13 @@ func TestPoWSyncLocalFailureTyped(t *testing.T) {
 	failure := errors.New("disk unavailable")
 	p := &chainSync{SyncDeps: SyncDeps{Rules: powTestProtocol{}, Ledger: failingPoWLedger{err: failure}, Pool: powTestPool{}}}
 	_, e := p.syncPeer(context.Background(), "peer", nil)
-	var local *core.LocalServiceError
+	var local *replicationcap.LocalServiceError
 	if !errors.As(e, &local) || !errors.Is(e, failure) {
 		t.Fatal("storage failure treated as remote error", e)
 	}
 }
 
-type canceledPoWLedger struct{ core.BranchLedger }
+type canceledPoWLedger struct{ chaincap.BranchLedger }
 
 func (canceledPoWLedger) Head(ctx context.Context) (core.ID, error) { return "", ctx.Err() }
 func TestPoWHandlerRequestCancellationNotFatal(t *testing.T) {
@@ -146,7 +150,7 @@ func TestPoWHandlerRequestCancellationNotFatal(t *testing.T) {
 // Shutdown must join in-flight handlers so a local failure cannot disappear
 // merely because the root cancellation raced it.
 type handlerNetwork struct {
-	core.Network
+	networkcap.Network
 	installed chan func(context.Context, []byte) ([]byte, error)
 }
 
@@ -157,7 +161,7 @@ func (n handlerNetwork) Handle(h func(context.Context, []byte) ([]byte, error)) 
 func (handlerNetwork) Peers() []string { return nil }
 
 type barrierHeadLedger struct {
-	core.BranchLedger
+	chaincap.BranchLedger
 	entered, release chan struct{}
 	failure          error
 }
@@ -203,7 +207,7 @@ func TestSyncShutdownJoinsHandlerLocalFailure(t *testing.T) {
 }
 
 type admissionLedger struct {
-	core.BranchLedger
+	chaincap.BranchLedger
 	failure error
 }
 
@@ -219,7 +223,7 @@ func TestSyncAdmissionMixedExpectedErrorIsLocal(t *testing.T) {
 	} {
 		p := &chainSync{SyncDeps: SyncDeps{Ledger: admissionLedger{failure: test.lookup}, Pool: failingAddPool{failure: test.add}}}
 		err := p.admit(context.Background(), powTestBlock("tx"))
-		var local *core.LocalServiceError
+		var local *replicationcap.LocalServiceError
 		if !errors.As(err, &local) || !errors.Is(err, failure) {
 			t.Fatalf("admission fault hidden by expected error: %v", err)
 		}
@@ -232,14 +236,14 @@ func (importPageProtocol) DecodeBlock(data []byte) (core.Block, error) {
 	return powTestBlock(core.ID(data)), nil
 }
 
-type importPageNetwork struct{ core.Network }
+type importPageNetwork struct{ networkcap.Network }
 
 func (importPageNetwork) Request(context.Context, string, []byte) ([]byte, error) {
 	return json.Marshal(syncMessage{Descriptor: powTestProtocol{}.Protocol(), Blocks: [][]byte{[]byte("received")}})
 }
 
 type importPageFailure struct {
-	core.BlockImporter
+	replicationcap.BlockImporter
 	failure error
 }
 
@@ -254,12 +258,12 @@ func TestSyncImportMixedAlreadyCommittedRemainsLocal(t *testing.T) {
 	}{
 		{err: core.ErrAlreadyCommitted},
 		{err: errors.Join(core.ErrAlreadyCommitted)},
-		{err: &core.LocalServiceError{Cause: errors.Join(core.ErrAlreadyCommitted, failure)}, local: true},
+		{err: &replicationcap.LocalServiceError{Cause: errors.Join(core.ErrAlreadyCommitted, failure)}, local: true},
 	} {
 		p := &chainSync{SyncDeps: SyncDeps{Rules: importPageProtocol{}, Ledger: powTestLedger{}, Pool: powTestPool{}, Network: importPageNetwork{}, Importer: importPageFailure{failure: test.err}}}
 		_, err := p.syncPeer(context.Background(), "peer", nil)
 		if test.local {
-			var local *core.LocalServiceError
+			var local *replicationcap.LocalServiceError
 			if !errors.As(err, &local) || !errors.Is(err, failure) {
 				t.Fatalf("local import fault swallowed as duplicate: %v", err)
 			}
