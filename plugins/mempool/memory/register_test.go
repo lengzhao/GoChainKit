@@ -3,25 +3,30 @@ package memory
 import (
 	"context"
 	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/internal/testprotocol"
+	"github.com/lengzhao/pluginkit"
 	"github.com/lengzhao/pluginkit/build"
 	"github.com/lengzhao/pluginkit/config"
 	"testing"
 )
 
+func init() {
+	pluginkit.Register("protocol/pool-test", func() (contracts.Protocol, error) { return testprotocol.New("custom"), nil })
+}
 func TestPluginKitAssembly(t *testing.T) {
-	graph := map[string]any{"pool": config.PluginUse{Use: "mempool/memory", Config: map[string]any{"chainID": "dev", "maxTransactions": 1, "maxBytes": 4096}}}
+	graph := map[string]any{"protocol": config.PluginUse{Use: "protocol/pool-test"}, "pool": config.PluginUse{Use: "mempool/memory", Config: map[string]any{"maxTransactions": 1, "maxBytes": 4096}, Deps: map[string]any{"protocol": "protocol"}}}
 	p, _, err := build.Build[contracts.Mempool](context.Background(), graph, "pool")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := p.Add(context.Background(), transaction(t, 1)); err != nil {
+	if err := p.Add(context.Background(), testprotocol.Tx{Label: "a"}); err != nil {
 		t.Fatal(err)
 	}
-	second, _, err := build.Build[contracts.Mempool](context.Background(), graph, "pool")
+	other, _, err := build.Build[contracts.Mempool](context.Background(), graph, "pool")
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := second.Select(context.Background(), 4096)
+	got, err := other.Select(context.Background(), 4096)
 	if err != nil || len(got) != 0 {
 		t.Fatal("instances share state", err)
 	}

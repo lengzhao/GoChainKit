@@ -1,5 +1,7 @@
 # GoChainKit Implementation Plan
 
+> 后续协议接口已重构。当前接口和目录以 [模块与协议接口](../interfaces.md) 为准，本文保留初版执行计划历史。
+
 > 执行要求：按 executing-plans 工作流逐项执行；每项先编写行为测试、确认失败，再实现并确认通过。
 
 **Goal:** 使用 PluginKit 装配可提交交易、单节点出块、确定性执行、原子持久化及重启恢复的 Go 区块链。

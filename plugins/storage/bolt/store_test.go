@@ -6,7 +6,9 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"github.com/lengzhao/GoChainKit/core/contracts"
-	"github.com/lengzhao/GoChainKit/core/types"
+	protocol "github.com/lengzhao/GoChainKit/protocol/kv"
+	"github.com/lengzhao/GoChainKit/protocol/kv/types"
+	db "go.etcd.io/bbolt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -43,15 +45,17 @@ func TestProcessExitDurability(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			raw, _ := protocol.UnwrapBlock(b)
 			expected := uint64(0)
 			if phase == "after" {
 				expected = 1
 			}
-			if b.Header.Height != expected {
-				t.Fatalf("height %d, want %d", b.Header.Height, expected)
+			if raw.Header.Height != expected {
+				t.Fatalf("height %d, want %d", raw.Header.Height, expected)
 			}
 			if expected == 1 {
-				txid, _ := b.Transactions[0].ID()
+				txs, _ := s.p.Transactions(b)
+				txid := txs[0].ID()
 				if _, err := s.Transaction(context.Background(), txid); err != nil {
 					t.Fatal(err)
 				}
@@ -72,7 +76,7 @@ func TestProcessExitDurability(t *testing.T) {
 	}
 }
 
-func candidate(t *testing.T, s *Store) (types.Hash, types.Block, types.ExecutionResult) {
+func candidate(t *testing.T, s *Store) (contracts.ID, contracts.Block, contracts.ExecutionResult) {
 	t.Helper()
 	ctx := context.Background()
 	parent, err := s.Head(ctx)
@@ -84,23 +88,27 @@ func candidate(t *testing.T, s *Store) (types.Hash, types.Block, types.Execution
 		t.Fatal(err)
 	}
 	tx := types.Transaction{ChainID: "dev", Nonce: 1, Key: []byte("k"), Value: []byte{0xff, 0, 0x80}}
-	if err := tx.Sign(ed25519.NewKeyFromSeed(make([]byte, 32))); err != nil {
+	if err = tx.Sign(ed25519.NewKeyFromSeed(make([]byte, 32))); err != nil {
 		t.Fatal(err)
 	}
-	id, _ := tx.ID()
-	root, _ := types.TransactionRoot([]types.Transaction{tx})
-	state := map[string][]byte{string([]byte{0xff, 0, 0x80}): tx.Value}
-	receipts := []types.Receipt{{TransactionID: id, Success: true}}
-	b := types.Block{Header: types.BlockHeader{Version: 1, ChainID: "dev", Parent: parent, Height: previous.Header.Height + 1, TransactionRoot: root, StateRoot: types.StateRoot(state), ReceiptRoot: types.ReceiptRoot(receipts)}, Transactions: []types.Transaction{tx}}
-	bid, err := b.ID()
+	w, _ := protocol.WrapTransaction(tx)
+	draft, err := s.p.Draft(ctx, previous, []contracts.Transaction{w})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return parent, b, types.ExecutionResult{Parent: parent, BlockID: bid, Writes: state, Receipts: receipts, StateRoot: b.Header.StateRoot}
+	state := map[string][]byte{string([]byte{0xff, 0, 0x80}): tx.Value}
+	root, _ := s.p.StateCommitment(ctx, state)
+	r := contracts.ExecutionResult{Parent: parent, BlockID: draft.ID(), Writes: state, StateRoot: root, Receipts: []contracts.Receipt{{TransactionID: w.ID(), Data: []byte{1}}}}
+	b, err := s.p.Finalize(ctx, draft, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.BlockID = b.ID()
+	return parent, b, r
 }
 func openStore(t *testing.T, path string) *Store {
 	t.Helper()
-	s, err := New(Config{ChainID: "dev", Path: path})
+	s, err := New(Config{Path: path}, Deps{Protocol: mustProtocol("dev")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,16 +135,17 @@ func TestDiskRoundTrip(t *testing.T) {
 		t.Fatal("head not recovered", err)
 	}
 	stored, err := s.Block(ctx, head)
-	if err != nil || len(stored.Transactions) != 1 {
+	if err != nil || stored == nil {
 		t.Fatal("block missing", err)
 	}
-	txid, _ := b.Transactions[0].ID()
+	txs, _ := s.p.Transactions(b)
+	txid := txs[0].ID()
 	tx, err := s.Transaction(ctx, txid)
-	if err != nil || tx.BlockID != head || tx.Transaction.Nonce != 1 {
+	if err != nil || tx.BlockID != head || tx.Transaction == nil {
 		t.Fatal("transaction missing", err)
 	}
 	receipt, err := s.Receipt(ctx, txid)
-	if err != nil || !receipt.Success {
+	if err != nil || !bytes.Equal(receipt.Data, []byte{1}) {
 		t.Fatal("receipt missing", err)
 	}
 	snapshot, err := s.Snapshot(ctx, head)
@@ -169,7 +178,8 @@ func TestRollbackAndWrongChain(t *testing.T) {
 	if _, err := s.Block(ctx, result.BlockID); !errors.Is(err, contracts.ErrNotFound) {
 		t.Fatal("partial block", err)
 	}
-	txid, _ := b.Transactions[0].ID()
+	txs, _ := s.p.Transactions(b)
+	txid := txs[0].ID()
 	if _, err := s.Transaction(ctx, txid); !errors.Is(err, contracts.ErrNotFound) {
 		t.Fatal("partial transaction", err)
 	}
@@ -188,12 +198,34 @@ func TestRollbackAndWrongChain(t *testing.T) {
 		t.Fatal("rollback not durable")
 	}
 	_ = s.Stop(ctx)
-	wrong, err := New(Config{ChainID: "other", Path: path})
+	wrong, err := New(Config{Path: path}, Deps{Protocol: mustProtocol("other")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := wrong.Start(ctx); err == nil {
 		_ = wrong.Stop(ctx)
 		t.Fatal("accepted different chain")
+	}
+}
+
+func mustProtocol(network string) contracts.Protocol {
+	p, e := protocol.New(protocol.Config{ChainID: network})
+	if e != nil {
+		panic(e)
+	}
+	return p
+}
+
+func TestOldFormatRejected(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "chain.db")
+	s := openStore(t, path)
+	if err := s.db.Update(func(tx *db.Tx) error { return tx.Bucket([]byte("meta")).Put([]byte("format"), []byte("1")) }); err != nil {
+		t.Fatal(err)
+	}
+	s.Stop(context.Background())
+	next, _ := New(Config{Path: path}, Deps{mustProtocol("dev")})
+	if err := next.Start(context.Background()); err == nil {
+		next.Stop(context.Background())
+		t.Fatal("accepted old format")
 	}
 }

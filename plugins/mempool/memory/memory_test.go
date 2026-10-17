@@ -2,96 +2,81 @@ package memory
 
 import (
 	"context"
-	"crypto/ed25519"
 	"errors"
 	"github.com/lengzhao/GoChainKit/core/contracts"
-	"github.com/lengzhao/GoChainKit/core/types"
+	"github.com/lengzhao/GoChainKit/internal/testprotocol"
 	"sync"
 	"testing"
 )
 
-func transaction(t *testing.T, n uint64) types.Transaction {
-	t.Helper()
-	tx := types.Transaction{ChainID: "dev", Nonce: n, Key: []byte("k"), Value: []byte("v")}
-	if err := tx.Sign(ed25519.NewKeyFromSeed(make([]byte, 32))); err != nil {
-		t.Fatal(err)
-	}
-	return tx
-}
 func TestCapacitySelectionAndOwnership(t *testing.T) {
 	ctx := context.Background()
-	p, err := New(Config{ChainID: "dev", MaxTransactions: 1, MaxBytes: 4096})
+	p, err := New(Config{MaxTransactions: 1, MaxBytes: 4096}, Deps{testprotocol.New("custom")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx := transaction(t, 1)
-	original := tx.Clone()
+	tx := testprotocol.Tx{Label: "a", Body: []byte("value")}
+	id := tx.ID()
 	if err := p.Add(ctx, tx); err != nil {
 		t.Fatal(err)
 	}
 	if err := p.Add(ctx, tx); err != nil {
 		t.Fatal(err)
 	}
-	tx.Value[0] = 'x'
-	if err := p.Add(ctx, transaction(t, 2)); !errors.Is(err, contracts.ErrFull) {
-		t.Fatalf("expected full, got %v", err)
+	tx.Body[0] = 'x'
+	if err := p.Add(ctx, testprotocol.Tx{Label: "b"}); !errors.Is(err, contracts.ErrFull) {
+		t.Fatal(err)
 	}
 	small, err := p.Select(ctx, 1)
 	if err != nil || len(small) != 0 {
-		t.Fatal("byte budget ignored", err)
+		t.Fatal("ignored budget", err)
 	}
 	got, err := p.Select(ctx, 4096)
 	if err != nil || len(got) != 1 {
-		t.Fatal("selection failed", err)
-	}
-	if string(got[0].Value) != "v" {
-		t.Fatal("retained caller memory")
-	}
-	got[0].Value[0] = 'x'
-	got, err = p.Select(ctx, 4096)
-	if err != nil || string(got[0].Value) != "v" {
-		t.Fatal("returned internal memory")
-	}
-	id, err := original.ID()
-	if err != nil {
 		t.Fatal(err)
 	}
+	v := got[0].(testprotocol.Tx)
+	if string(v.Body) != "value" {
+		t.Fatal("retained caller data")
+	}
+	v.Body[0] = 'x'
+	got, err = p.Select(ctx, 4096)
+	if err != nil || string(got[0].(testprotocol.Tx).Body) != "value" {
+		t.Fatal("leaked internal data", err)
+	}
 	for range 2 {
-		if err := p.Remove(ctx, []types.Hash{id}); err != nil {
+		if err := p.Remove(ctx, []contracts.ID{id}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := p.Add(ctx, transaction(t, 2)); err != nil {
+	if err := p.Add(ctx, testprotocol.Tx{Label: "b"}); err != nil {
 		t.Fatal(err)
 	}
 }
 func TestInvalidAndCanceled(t *testing.T) {
-	p, err := New(Config{ChainID: "dev", MaxTransactions: 10, MaxBytes: 4096})
+	p, err := New(Config{MaxTransactions: 10, MaxBytes: 4096}, Deps{testprotocol.New("custom")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx := transaction(t, 1)
-	tx.Nonce++
-	if err := p.Add(context.Background(), tx); !errors.Is(err, contracts.ErrInvalidTransaction) {
+	if err := p.Add(context.Background(), testprotocol.Tx{}); !errors.Is(err, contracts.ErrInvalidTransaction) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := p.Add(ctx, transaction(t, 1)); !errors.Is(err, context.Canceled) {
+	if err := p.Add(ctx, testprotocol.Tx{Label: "a"}); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
-	if _, err := New(Config{}); err == nil {
+	if _, err := New(Config{}, Deps{}); err == nil {
 		t.Fatal("accepted unbounded configuration")
 	}
 }
 func TestConcurrentPoolAccess(t *testing.T) {
-	p, err := New(Config{ChainID: "dev", MaxTransactions: 100, MaxBytes: 1 << 20})
+	p, err := New(Config{MaxTransactions: 100, MaxBytes: 1 << 20}, Deps{testprotocol.New("custom")})
 	if err != nil {
 		t.Fatal(err)
 	}
+	tx := testprotocol.Tx{Label: "a"}
 	ctx := context.Background()
-	tx := transaction(t, 1)
-	id, _ := tx.ID()
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Add(1)
@@ -104,7 +89,7 @@ func TestConcurrentPoolAccess(t *testing.T) {
 				if _, err := p.Select(ctx, 4096); err != nil {
 					t.Error(err)
 				}
-				if err := p.Remove(ctx, []types.Hash{id}); err != nil {
+				if err := p.Remove(ctx, []contracts.ID{tx.ID()}); err != nil {
 					t.Error(err)
 				}
 			}

@@ -1,54 +1,67 @@
-// Package memory implements a bounded, nonpersistent transaction pool.
+// Package memory implements a format-independent bounded transaction pool.
 package memory
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/lengzhao/GoChainKit/core/contracts"
-	"github.com/lengzhao/GoChainKit/core/types"
 	"sync"
 )
 
 type Config struct {
-	ChainID         string `json:"chainID"`
-	MaxTransactions int    `json:"maxTransactions"`
-	MaxBytes        int    `json:"maxBytes"`
+	MaxTransactions int `json:"maxTransactions"`
+	MaxBytes        int `json:"maxBytes"`
+}
+type Deps struct {
+	Protocol contracts.Protocol `json:"protocol"`
 }
 type entry struct {
-	id   types.Hash
-	tx   types.Transaction
-	size int
+	id   contracts.ID
+	data []byte
 }
 type pool struct {
-	mu      sync.Mutex
-	cfg     Config
-	entries []entry
-	ids     map[types.Hash]bool
-	bytes   int
+	mu       sync.Mutex
+	cfg      Config
+	protocol contracts.Protocol
+	entries  []entry
+	ids      map[contracts.ID]bool
+	bytes    int
 }
 
-func New(cfg Config) (contracts.Mempool, error) {
-	if cfg.ChainID == "" || len(cfg.ChainID) > types.MaxChainIDBytes || cfg.MaxTransactions <= 0 || cfg.MaxBytes <= 0 {
-		return nil, fmt.Errorf("mempool/memory: chainID and positive capacity limits required")
+func New(cfg Config, deps Deps) (contracts.Mempool, error) {
+	if deps.Protocol == nil || cfg.MaxTransactions <= 0 || cfg.MaxBytes <= 0 {
+		return nil, fmt.Errorf("mempool/memory: protocol and positive limits required")
 	}
-	return &pool{cfg: cfg, ids: make(map[types.Hash]bool)}, nil
+	if err := deps.Protocol.Protocol().Validate(); err != nil {
+		return nil, err
+	}
+	return &pool{cfg: cfg, protocol: deps.Protocol, ids: make(map[contracts.ID]bool)}, nil
 }
-func (p *pool) Add(ctx context.Context, tx types.Transaction) error {
+func (p *pool) Protocol() contracts.ProtocolDescriptor { return p.protocol.Protocol() }
+func (p *pool) Add(ctx context.Context, t contracts.Transaction) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	tx = tx.Clone()
-	if err := tx.Verify(p.cfg.ChainID); err != nil {
+	if t == nil || t.ID() == "" {
+		return contracts.ErrInvalidTransaction
+	}
+	if err := p.protocol.ValidateTransaction(ctx, t); err != nil {
 		return fmt.Errorf("%w: %v", contracts.ErrInvalidTransaction, err)
 	}
-	encoded, err := tx.MarshalBinary()
+	data, err := p.protocol.EncodeTransaction(t)
 	if err != nil {
 		return err
 	}
-	id, err := tx.ID()
+	owned, err := p.protocol.DecodeTransaction(data)
 	if err != nil {
 		return err
 	}
+	if owned == nil || owned.ID() != t.ID() {
+		return fmt.Errorf("transaction codec changed identity")
+	}
+	id := owned.ID()
+	data = bytes.Clone(data)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if err := ctx.Err(); err != nil {
@@ -57,37 +70,44 @@ func (p *pool) Add(ctx context.Context, tx types.Transaction) error {
 	if p.ids[id] {
 		return nil
 	}
-	if len(p.entries) >= p.cfg.MaxTransactions || len(encoded) > p.cfg.MaxBytes-p.bytes {
+	if len(p.entries) >= p.cfg.MaxTransactions || len(data) > p.cfg.MaxBytes-p.bytes {
 		return contracts.ErrFull
 	}
-	p.entries = append(p.entries, entry{id: id, tx: tx, size: len(encoded)})
+	p.entries = append(p.entries, entry{id, data})
 	p.ids[id] = true
-	p.bytes += len(encoded)
+	p.bytes += len(data)
 	return nil
 }
-func (p *pool) Select(ctx context.Context, maxBytes int) ([]types.Transaction, error) {
+func (p *pool) Select(ctx context.Context, budget int) ([]contracts.Transaction, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if maxBytes < 0 {
+	if budget < 0 {
 		return nil, fmt.Errorf("negative selection budget")
 	}
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	var out []types.Transaction
+	var selected [][]byte
 	for _, e := range p.entries {
-		if e.size > maxBytes {
-			continue
+		if len(e.data) <= budget {
+			selected = append(selected, bytes.Clone(e.data))
+			budget -= len(e.data)
 		}
-		out = append(out, e.tx.Clone())
-		maxBytes -= e.size
+	}
+	p.mu.Unlock()
+	var out []contracts.Transaction
+	for _, data := range selected {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		t, err := p.protocol.DecodeTransaction(data)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
 	}
 	return out, nil
 }
-func (p *pool) Remove(ctx context.Context, ids []types.Hash) error {
+func (p *pool) Remove(ctx context.Context, ids []contracts.ID) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -96,7 +116,7 @@ func (p *pool) Remove(ctx context.Context, ids []types.Hash) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	remove := make(map[types.Hash]bool, len(ids))
+	remove := make(map[contracts.ID]bool, len(ids))
 	for _, id := range ids {
 		remove[id] = true
 	}
@@ -104,7 +124,7 @@ func (p *pool) Remove(ctx context.Context, ids []types.Hash) error {
 	for _, e := range p.entries {
 		if remove[e.id] {
 			delete(p.ids, e.id)
-			p.bytes -= e.size
+			p.bytes -= len(e.data)
 		} else {
 			kept = append(kept, e)
 		}

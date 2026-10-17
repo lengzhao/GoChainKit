@@ -12,7 +12,8 @@
 
 沿用 AgentKit 的原则：PluginKit 负责通用装配，领域框架定义语义，插件提供实现。
 
-- `core/types`：协议数据、规范编码和公共值类型，不依赖插件、Node 或 PluginKit。
+- `core/contracts` 中的 ID、Commitment 与对象接口：不限定长度、字段、签名或区块拓扑，不依赖默认协议。
+- `protocol/<name>`：具体链的格式、编解码与规则；默认 KV 类型位于 `protocol/kv/types`。
 - `core/contracts`：领域接口与错误契约，可依赖公共类型，不依赖插件实现。
 - `runtime/<capability>`：确有多个消费者需要的共享实现，不负责插件注册。
 - `plugins/<capability>/<implementation>`：配置适配、构造、注册及具体实现。
@@ -22,7 +23,7 @@
 
 生产插件包之间不得相互 import，包括为调用另一插件的 New 而建立的依赖。用 Deps 注入接口；共享算法提取到 runtime。仅 assembly、聚合注册包和集成测试可直接导入多个插件包。
 
-AgentKit 使用根包和 cap 放置契约；本项目第一版沿用已评审草图中的 core/types 与 core/contracts，不同时建立另一套 cap 接口。后续确有拆包需求时再单独决策。
+AgentKit 使用根包和 cap 放置契约；本项目通过 core/contracts 定义通用契约，通过 protocol 隔离具体格式。当前接口以 [模块与协议接口](interfaces.md) 为准。
 
 ## 2 Go 编程习惯
 
@@ -55,6 +56,7 @@ type Config struct {
 }
 
 type Deps struct {
+    Protocol contracts.Protocol `json:"protocol"`
     Executor contracts.Executor `json:"executor"`
 }
 
@@ -111,6 +113,8 @@ Node 是运行生命周期 owner，按拓扑顺序启动，逆序关闭；对共
 - 交易池准入只是预检查，最终执行必须重新验证。缓存不能成为正确性的唯一依据。
 - AgentKit 的临时 context 状态袋不能用作链状态、余额、序号、最终性记录或恢复依据。
 - 本地配置与创世/协议配置分离。更换插件若改变编码、执行或共识语义，应按协议升级处理，不能作为普通热配置变更。
+- 通用组件不得 import 具体协议或断言默认 Header、Nonce、哈希长度；通过注入的能力工作，并核对 ProtocolDescriptor。
+- ID 和 Commitment 是不透明二进制值，自定义编码器不得把任意字节误当 UTF-8 字符串。
 
 ## 8 测试与审查
 
