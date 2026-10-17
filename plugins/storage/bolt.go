@@ -1,5 +1,5 @@
 // Package bolt persists protocol-neutral records using synchronous transactions.
-package bolt
+package storage
 
 import (
 	"bytes"
@@ -18,16 +18,13 @@ import (
 
 var buckets = []string{"meta", "blocks", "states", "transactions", "receipts", "roots", "results"}
 
-type Config struct {
+type BoltConfig struct {
 	Path string `json:"path"`
 }
-type Deps struct {
-	Protocol core.Protocol `json:"protocol"`
-}
 type TransactionRecord = core.ConfirmedTransaction
-type Store struct {
+type BoltStore struct {
 	mu          sync.RWMutex
-	cfg         Config
+	cfg         BoltConfig
 	p           core.Protocol
 	db          *db.DB
 	stopped     bool
@@ -37,17 +34,17 @@ type Store struct {
 	beforeHead  func() error
 }
 
-func init() { pluginkit.Register("storage/bolt", New) }
-func New(c Config, d Deps) (*Store, error) {
+func init() { pluginkit.Register("storage/bolt", NewBolt) }
+func NewBolt(c BoltConfig, d Deps) (*BoltStore, error) {
 	if c.Path == "" || d.Protocol == nil {
 		return nil, fmt.Errorf("path and protocol required")
 	}
 	if e := d.Protocol.Protocol().Validate(); e != nil {
 		return nil, e
 	}
-	return &Store{cfg: c, p: d.Protocol}, nil
+	return &BoltStore{cfg: c, p: d.Protocol}, nil
 }
-func (s *Store) Protocol() core.ProtocolDescriptor { return s.p.Protocol() }
+func (s *BoltStore) Protocol() core.ProtocolDescriptor { return s.p.Protocol() }
 func encode(v any) ([]byte, error) {
 	var b bytes.Buffer
 	e := gob.NewEncoder(&b).Encode(v)
@@ -71,7 +68,7 @@ func get(tx *db.Tx, b string, k []byte, v any) error {
 	}
 	return gob.NewDecoder(bytes.NewReader(data)).Decode(v)
 }
-func (s *Store) Start(ctx context.Context) (err error) {
+func (s *BoltStore) Start(ctx context.Context) (err error) {
 	s.mu.Lock()
 	if s.stopped {
 		s.mu.Unlock()
@@ -180,7 +177,7 @@ func (s *Store) Start(ctx context.Context) (err error) {
 	if e != nil {
 		return e
 	}
-	reader := &Store{p: s.p, db: database}
+	reader := &BoltStore{p: s.p, db: database}
 	head, e := reader.Head(ctx)
 	if e == nil {
 		_, e = reader.Block(ctx, head)
@@ -222,7 +219,7 @@ func (s *Store) Start(ctx context.Context) (err error) {
 	}
 	return e
 }
-func (s *Store) Stop(ctx context.Context) error {
+func (s *BoltStore) Stop(ctx context.Context) error {
 	if e := ctx.Err(); e != nil {
 		return e
 	}
@@ -247,7 +244,7 @@ func (s *Store) Stop(ctx context.Context) error {
 	s.db = nil
 	return e
 }
-func (s *Store) view(ctx context.Context, fn func(*db.Tx) error) error {
+func (s *BoltStore) view(ctx context.Context, fn func(*db.Tx) error) error {
 	if e := ctx.Err(); e != nil {
 		return e
 	}
@@ -258,12 +255,12 @@ func (s *Store) view(ctx context.Context, fn func(*db.Tx) error) error {
 	}
 	return s.db.View(fn)
 }
-func (s *Store) Head(ctx context.Context) (core.ID, error) {
+func (s *BoltStore) Head(ctx context.Context) (core.ID, error) {
 	var h core.ID
 	e := s.view(ctx, func(tx *db.Tx) error { return get(tx, "meta", []byte("head"), &h) })
 	return h, e
 }
-func (s *Store) Block(ctx context.Context, id core.ID) (core.Block, error) {
+func (s *BoltStore) Block(ctx context.Context, id core.ID) (core.Block, error) {
 	var data []byte
 	e := s.view(ctx, func(tx *db.Tx) error { return get(tx, "blocks", []byte(id), &data) })
 	if e != nil {
@@ -271,12 +268,12 @@ func (s *Store) Block(ctx context.Context, id core.ID) (core.Block, error) {
 	}
 	return ledger.DecodeBlock(s.p, data, id)
 }
-func (s *Store) Receipt(ctx context.Context, id core.ID) (core.Receipt, error) {
+func (s *BoltStore) Receipt(ctx context.Context, id core.ID) (core.Receipt, error) {
 	var r core.Receipt
 	e := s.view(ctx, func(tx *db.Tx) error { return get(tx, "receipts", []byte(id), &r) })
 	return r, e
 }
-func (s *Store) Transaction(ctx context.Context, id core.ID) (TransactionRecord, error) {
+func (s *BoltStore) Transaction(ctx context.Context, id core.ID) (TransactionRecord, error) {
 	var r ledger.Record
 	e := s.view(ctx, func(tx *db.Tx) error { return get(tx, "transactions", []byte(id), &r) })
 	if e != nil {
@@ -285,7 +282,7 @@ func (s *Store) Transaction(ctx context.Context, id core.ID) (TransactionRecord,
 	t, e := ledger.DecodeTransaction(s.p, r.Data, id)
 	return TransactionRecord{Transaction: t, BlockID: r.BlockID, Index: r.Index}, e
 }
-func (s *Store) Snapshot(ctx context.Context, id core.ID) (core.StateReader, error) {
+func (s *BoltStore) Snapshot(ctx context.Context, id core.ID) (core.StateReader, error) {
 	var state map[string][]byte
 	var root core.Commitment
 	e := s.view(ctx, func(tx *db.Tx) error {
@@ -306,7 +303,7 @@ func (s *Store) Snapshot(ctx context.Context, id core.ID) (core.StateReader, err
 	}
 	return &ledger.Snapshot{State: state, Commitment: root}, nil
 }
-func (s *Store) Commit(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) error {
+func (s *BoltStore) Commit(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) error {
 	if b == nil {
 		return fmt.Errorf("nil block")
 	}
@@ -341,7 +338,7 @@ func (s *Store) Commit(ctx context.Context, parent core.ID, b core.Block, r core
 	}
 	return e
 }
-func (s *Store) commit(ctx context.Context, tx *db.Tx, parent core.ID, v ledger.Prepared) error {
+func (s *BoltStore) commit(ctx context.Context, tx *db.Tx, parent core.ID, v ledger.Prepared) error {
 	if e := ctx.Err(); e != nil {
 		return e
 	}

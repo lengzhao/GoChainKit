@@ -14,7 +14,7 @@
 - `node/coordinator`：重新执行验证提议，提交成功后清理交易池。
 - `consensus/single`：按固定间隔驱动提议、验证、提交；错误终止运行，取消时退出。
 
-Coordinator 位于 node 层，不导入插件实现。plugins/node/coordinator 仅提供 PluginKit 构造适配。
+Coordinator 位于 node 层，不导入插件实现。plugins/node 仅提供 PluginKit 构造适配。
 
 ## 数据和接口补充
 

@@ -1,5 +1,5 @@
 // Package memory provides an ephemeral protocol-neutral backend.
-package memory
+package storage
 
 import (
 	"bytes"
@@ -11,11 +11,11 @@ import (
 	"sync"
 )
 
-type Config struct{}
+type MemoryConfig struct{}
 type Deps struct {
 	Protocol core.Protocol `json:"protocol"`
 }
-type Store struct {
+type MemoryStore struct {
 	mu           sync.RWMutex
 	p            core.Protocol
 	head         core.ID
@@ -26,8 +26,8 @@ type Store struct {
 	receipts     map[core.ID]core.Receipt
 }
 
-func init() { pluginkit.Register("storage/memory", New) }
-func New(_ Config, d Deps) (*Store, error) {
+func init() { pluginkit.Register("storage/memory", NewMemory) }
+func NewMemory(_ MemoryConfig, d Deps) (*MemoryStore, error) {
 	if d.Protocol == nil {
 		return nil, fmt.Errorf("protocol required")
 	}
@@ -38,10 +38,10 @@ func New(_ Config, d Deps) (*Store, error) {
 	if e != nil {
 		return nil, e
 	}
-	return &Store{p: d.Protocol, head: g.ID, blocks: map[core.ID][]byte{g.ID: g.Block}, states: map[core.ID]map[string][]byte{g.ID: g.State}, roots: map[core.ID]core.Commitment{g.ID: g.Root}, transactions: map[core.ID]ledger.Record{}, receipts: map[core.ID]core.Receipt{}}, nil
+	return &MemoryStore{p: d.Protocol, head: g.ID, blocks: map[core.ID][]byte{g.ID: g.Block}, states: map[core.ID]map[string][]byte{g.ID: g.State}, roots: map[core.ID]core.Commitment{g.ID: g.Root}, transactions: map[core.ID]ledger.Record{}, receipts: map[core.ID]core.Receipt{}}, nil
 }
-func (s *Store) Protocol() core.ProtocolDescriptor { return s.p.Protocol() }
-func (s *Store) Head(ctx context.Context) (core.ID, error) {
+func (s *MemoryStore) Protocol() core.ProtocolDescriptor { return s.p.Protocol() }
+func (s *MemoryStore) Head(ctx context.Context) (core.ID, error) {
 	if e := ctx.Err(); e != nil {
 		return "", e
 	}
@@ -49,7 +49,7 @@ func (s *Store) Head(ctx context.Context) (core.ID, error) {
 	defer s.mu.RUnlock()
 	return s.head, nil
 }
-func (s *Store) Block(ctx context.Context, id core.ID) (core.Block, error) {
+func (s *MemoryStore) Block(ctx context.Context, id core.ID) (core.Block, error) {
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
@@ -62,7 +62,7 @@ func (s *Store) Block(ctx context.Context, id core.ID) (core.Block, error) {
 	}
 	return ledger.DecodeBlock(s.p, data, id)
 }
-func (s *Store) Receipt(ctx context.Context, id core.ID) (core.Receipt, error) {
+func (s *MemoryStore) Receipt(ctx context.Context, id core.ID) (core.Receipt, error) {
 	if e := ctx.Err(); e != nil {
 		return core.Receipt{}, e
 	}
@@ -75,7 +75,7 @@ func (s *Store) Receipt(ctx context.Context, id core.ID) (core.Receipt, error) {
 	}
 	return r, nil
 }
-func (s *Store) Transaction(ctx context.Context, id core.ID) (core.ConfirmedTransaction, error) {
+func (s *MemoryStore) Transaction(ctx context.Context, id core.ID) (core.ConfirmedTransaction, error) {
 	if e := ctx.Err(); e != nil {
 		return core.ConfirmedTransaction{}, e
 	}
@@ -89,7 +89,7 @@ func (s *Store) Transaction(ctx context.Context, id core.ID) (core.ConfirmedTran
 	t, e := ledger.DecodeTransaction(s.p, r.Data, id)
 	return core.ConfirmedTransaction{Transaction: t, BlockID: r.BlockID, Index: r.Index}, e
 }
-func (s *Store) Snapshot(ctx context.Context, id core.ID) (core.StateReader, error) {
+func (s *MemoryStore) Snapshot(ctx context.Context, id core.ID) (core.StateReader, error) {
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
@@ -101,7 +101,7 @@ func (s *Store) Snapshot(ctx context.Context, id core.ID) (core.StateReader, err
 	}
 	return &ledger.Snapshot{State: ledger.Copy(state), Commitment: s.roots[id]}, nil
 }
-func (s *Store) Commit(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) error {
+func (s *MemoryStore) Commit(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) error {
 	if b == nil {
 		return fmt.Errorf("nil block")
 	}

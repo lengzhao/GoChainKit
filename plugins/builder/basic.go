@@ -1,5 +1,5 @@
 // Package basic assembles candidates without prescribing a block format.
-package basic
+package builder
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"github.com/lengzhao/pluginkit"
 )
 
-type Config struct {
+type BasicConfig struct {
 	MaxTransactionBytes int `json:"maxTransactionBytes"`
 }
 type Deps struct {
@@ -19,12 +19,12 @@ type Deps struct {
 	Executor core.Executor   `json:"executor"`
 }
 type builder struct {
-	cfg  Config
+	cfg  BasicConfig
 	deps Deps
 }
 
-func init() { pluginkit.Register("builder/basic", New) }
-func New(cfg Config, d Deps) (core.BlockBuilder, error) {
+func init() { pluginkit.Register("builder/basic", NewBasic) }
+func NewBasic(cfg BasicConfig, d Deps) (core.BlockBuilder, error) {
 	if cfg.MaxTransactionBytes <= 0 || d.Protocol == nil || d.Pool == nil || d.Chain == nil || d.States == nil || d.Executor == nil {
 		return nil, fmt.Errorf("builder/basic: protocol, dependencies and positive budget required")
 	}

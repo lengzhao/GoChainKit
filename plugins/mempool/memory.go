@@ -1,5 +1,5 @@
 // Package memory implements a format-independent bounded transaction pool.
-package memory
+package mempool
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-type Config struct {
+type MemoryConfig struct {
 	MaxTransactions int `json:"maxTransactions"`
 	MaxBytes        int `json:"maxBytes"`
 }
@@ -22,14 +22,14 @@ type entry struct {
 }
 type pool struct {
 	mu       sync.Mutex
-	cfg      Config
+	cfg      MemoryConfig
 	protocol core.Protocol
 	entries  []entry
 	ids      map[core.ID]bool
 	bytes    int
 }
 
-func New(cfg Config, deps Deps) (core.Mempool, error) {
+func NewMemory(cfg MemoryConfig, deps Deps) (core.Mempool, error) {
 	if deps.Protocol == nil || cfg.MaxTransactions <= 0 || cfg.MaxBytes <= 0 {
 		return nil, fmt.Errorf("mempool/memory: protocol and positive limits required")
 	}

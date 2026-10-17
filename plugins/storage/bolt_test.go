@@ -1,4 +1,4 @@
-package bolt
+package storage
 
 import (
 	"bytes"
@@ -7,7 +7,6 @@ import (
 	"errors"
 	"github.com/lengzhao/GoChainKit/core"
 	protocol "github.com/lengzhao/GoChainKit/protocol/kv"
-	"github.com/lengzhao/GoChainKit/protocol/kv/types"
 	db "go.etcd.io/bbolt"
 	"os"
 	"os/exec"
@@ -76,7 +75,7 @@ func TestProcessExitDurability(t *testing.T) {
 	}
 }
 
-func candidate(t *testing.T, s *Store) (core.ID, core.Block, core.ExecutionResult) {
+func candidate(t *testing.T, s *BoltStore) (core.ID, core.Block, core.ExecutionResult) {
 	t.Helper()
 	ctx := context.Background()
 	parent, err := s.Head(ctx)
@@ -87,7 +86,7 @@ func candidate(t *testing.T, s *Store) (core.ID, core.Block, core.ExecutionResul
 	if err != nil {
 		t.Fatal(err)
 	}
-	tx := types.Transaction{ChainID: "dev", Nonce: 1, Key: []byte("k"), Value: []byte{0xff, 0, 0x80}}
+	tx := protocol.Transaction{ChainID: "dev", Nonce: 1, Key: []byte("k"), Value: []byte{0xff, 0, 0x80}}
 	if err = tx.Sign(ed25519.NewKeyFromSeed(make([]byte, 32))); err != nil {
 		t.Fatal(err)
 	}
@@ -106,9 +105,9 @@ func candidate(t *testing.T, s *Store) (core.ID, core.Block, core.ExecutionResul
 	r.BlockID = b.ID()
 	return parent, b, r
 }
-func openStore(t *testing.T, path string) *Store {
+func openStore(t *testing.T, path string) *BoltStore {
 	t.Helper()
-	s, err := New(Config{Path: path}, Deps{Protocol: mustProtocol("dev")})
+	s, err := NewBolt(BoltConfig{Path: path}, Deps{Protocol: mustProtocol("dev")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +197,7 @@ func TestRollbackAndWrongChain(t *testing.T) {
 		t.Fatal("rollback not durable")
 	}
 	_ = s.Stop(ctx)
-	wrong, err := New(Config{Path: path}, Deps{Protocol: mustProtocol("other")})
+	wrong, err := NewBolt(BoltConfig{Path: path}, Deps{Protocol: mustProtocol("other")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +222,7 @@ func TestOldFormatRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Stop(context.Background())
-	next, _ := New(Config{Path: path}, Deps{mustProtocol("dev")})
+	next, _ := NewBolt(BoltConfig{Path: path}, Deps{mustProtocol("dev")})
 	if err := next.Start(context.Background()); err == nil {
 		next.Stop(context.Background())
 		t.Fatal("accepted old format")

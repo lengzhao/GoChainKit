@@ -1,6 +1,6 @@
 // Package types defines the draft GoChainKit protocol. Encoding changes require
 // protocol review; this initial version is not a production network protocol.
-package types
+package kv
 
 import (
 	"bytes"

@@ -1,6 +1,6 @@
 // Package single implements development-only single-node block production.
 // It provides no distributed agreement or Byzantine fault tolerance.
-package single
+package consensus
 
 import (
 	"context"
@@ -10,13 +10,13 @@ import (
 	"time"
 )
 
-type Config struct {
+type SingleConfig struct {
 	Interval string `json:"interval"`
 }
 type consensus struct{ interval time.Duration }
 
-func init() { pluginkit.Register("consensus/single", New) }
-func New(cfg Config) (core.Consensus, error) {
+func init() { pluginkit.Register("consensus/single", NewSingle) }
+func NewSingle(cfg SingleConfig) (core.Consensus, error) {
 	d, err := time.ParseDuration(cfg.Interval)
 	if err != nil || d <= 0 {
 		return nil, fmt.Errorf("consensus/single: positive interval required")

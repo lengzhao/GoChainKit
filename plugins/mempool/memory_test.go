@@ -1,4 +1,4 @@
-package memory
+package mempool
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 
 func TestCapacitySelectionAndOwnership(t *testing.T) {
 	ctx := context.Background()
-	p, err := New(Config{MaxTransactions: 1, MaxBytes: 4096}, Deps{testprotocol.New("custom")})
+	p, err := NewMemory(MemoryConfig{MaxTransactions: 1, MaxBytes: 4096}, Deps{testprotocol.New("custom")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestCapacitySelectionAndOwnership(t *testing.T) {
 	}
 }
 func TestInvalidAndCanceled(t *testing.T) {
-	p, err := New(Config{MaxTransactions: 10, MaxBytes: 4096}, Deps{testprotocol.New("custom")})
+	p, err := NewMemory(MemoryConfig{MaxTransactions: 10, MaxBytes: 4096}, Deps{testprotocol.New("custom")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,12 +66,12 @@ func TestInvalidAndCanceled(t *testing.T) {
 	if err := p.Add(ctx, testprotocol.Tx{Label: "a"}); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
-	if _, err := New(Config{}, Deps{}); err == nil {
+	if _, err := NewMemory(MemoryConfig{}, Deps{}); err == nil {
 		t.Fatal("accepted unbounded configuration")
 	}
 }
 func TestConcurrentPoolAccess(t *testing.T) {
-	p, err := New(Config{MaxTransactions: 100, MaxBytes: 1 << 20}, Deps{testprotocol.New("custom")})
+	p, err := NewMemory(MemoryConfig{MaxTransactions: 100, MaxBytes: 1 << 20}, Deps{testprotocol.New("custom")})
 	if err != nil {
 		t.Fatal(err)
 	}

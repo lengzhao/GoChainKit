@@ -13,7 +13,7 @@
 沿用 AgentKit 的原则：PluginKit 负责通用装配，领域框架定义语义，插件提供实现。
 
 - `core` 中的 ID、Commitment 与对象接口：不限定长度、字段、签名或区块拓扑，不依赖默认协议。
-- `protocol/<name>`：具体链的格式、编解码与规则；默认 KV 类型位于 `protocol/kv/types`。
+- `protocol/<name>`：具体链的格式、编解码与规则；默认 KV 类型位于 `protocol/kv`。
 - `core`：领域接口与错误契约，可依赖公共类型，不依赖插件实现。
 - `runtime/<capability>`：确有多个消费者需要的共享实现，不负责插件注册。
 - `plugins/<capability>/<implementation>`：配置适配、构造、注册及具体实现。

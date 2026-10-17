@@ -1,11 +1,10 @@
-package kv
+package executor
 
 import (
 	"context"
 	"crypto/ed25519"
 	"github.com/lengzhao/GoChainKit/core"
 	protocol "github.com/lengzhao/GoChainKit/protocol/kv"
-	"github.com/lengzhao/GoChainKit/protocol/kv/types"
 	"testing"
 )
 
@@ -18,12 +17,12 @@ func (snapshot) Close() error                                       { return nil
 func TestExecuteFinalize(t *testing.T) {
 	ctx := context.Background()
 	p, _ := protocol.New(protocol.Config{ChainID: "test"})
-	e, err := New(Config{ChainID: "test"}, Deps{Protocol: p})
+	e, err := NewKV(KVConfig{ChainID: "test"}, Deps{Protocol: p})
 	if err != nil {
 		t.Fatal(err)
 	}
 	g, _, _ := p.Genesis(ctx)
-	tx := types.Transaction{ChainID: "test", Nonce: 1, Key: []byte("k"), Value: []byte("v")}
+	tx := protocol.Transaction{ChainID: "test", Nonce: 1, Key: []byte("k"), Value: []byte("v")}
 	tx.Sign(ed25519.NewKeyFromSeed(make([]byte, 32)))
 	w, _ := protocol.WrapTransaction(tx)
 	d, err := p.Draft(ctx, g, []core.Transaction{w})

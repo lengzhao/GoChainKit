@@ -1,4 +1,4 @@
-package single
+package consensus
 
 import (
 	"context"
@@ -28,7 +28,7 @@ func (h *host) Commit(context.Context, core.Block) error {
 	return nil
 }
 func TestProducesAndStops(t *testing.T) {
-	c, err := New(Config{Interval: "1ms"})
+	c, err := NewSingle(SingleConfig{Interval: "1ms"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestProducesAndStops(t *testing.T) {
 	}
 }
 func TestValidationFailureStopsWithoutCommit(t *testing.T) {
-	c, err := New(Config{Interval: "1ms"})
+	c, err := NewSingle(SingleConfig{Interval: "1ms"})
 	if err != nil {
 		t.Fatal(err)
 	}

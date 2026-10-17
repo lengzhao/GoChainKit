@@ -1,5 +1,5 @@
 // Package kv implements the development chain's signed key-value transaction.
-package kv
+package executor
 
 import (
 	"bytes"
@@ -8,11 +8,10 @@ import (
 	"fmt"
 	"github.com/lengzhao/GoChainKit/core"
 	protocol "github.com/lengzhao/GoChainKit/protocol/kv"
-	"github.com/lengzhao/GoChainKit/protocol/kv/types"
 	"github.com/lengzhao/pluginkit"
 )
 
-type Config struct {
+type KVConfig struct {
 	ChainID string `json:"chainID"`
 }
 type Deps struct {
@@ -25,9 +24,9 @@ type executor struct {
 
 func (e *executor) Protocol() core.ProtocolDescriptor { return e.protocol.Protocol() }
 
-func init() { pluginkit.Register("executor/kv", New) }
-func New(cfg Config, deps Deps) (core.Executor, error) {
-	if cfg.ChainID == "" || len(cfg.ChainID) > types.MaxChainIDBytes {
+func init() { pluginkit.Register("executor/kv", NewKV) }
+func NewKV(cfg KVConfig, deps Deps) (core.Executor, error) {
+	if cfg.ChainID == "" || len(cfg.ChainID) > protocol.MaxChainIDBytes {
 		return nil, fmt.Errorf("executor/kv: chainID required")
 	}
 	if deps.Protocol == nil || deps.Protocol.Protocol() != (core.ProtocolDescriptor{Name: "kv", Version: "1", Network: cfg.ChainID}) {
@@ -37,14 +36,14 @@ func New(cfg Config, deps Deps) (core.Executor, error) {
 }
 
 // ValueKey namespaces application keys by sender and separates them from nonces.
-func ValueKey(address types.Address, key []byte) []byte {
+func ValueKey(address protocol.Address, key []byte) []byte {
 	out := make([]byte, 1+len(address)+len(key))
 	out[0] = 1
 	copy(out[1:], address[:])
 	copy(out[33:], key)
 	return out
 }
-func nonceKey(address types.Address) string { return string(append([]byte{0}, address[:]...)) }
+func nonceKey(address protocol.Address) string { return string(append([]byte{0}, address[:]...)) }
 func (e *executor) Execute(ctx context.Context, parent core.StateReader, candidate core.Block) (core.ExecutionResult, error) {
 	fail := func(err error) (core.ExecutionResult, error) { return core.ExecutionResult{}, err }
 	b, unwrapErr := protocol.UnwrapBlock(candidate)

@@ -52,7 +52,7 @@ Bolt 格式 2 保存协议身份与创世绑定。打开时拒绝身份、创世
 
 ## 默认协议
 
-原固定类型已移到 protocol/kv/types，签名、SHA-256、默认区块头和序号规则只存在于默认协议及其执行器。protocol/kv 提供私有不可变包装和显式 Wrap/Unwrap 函数；plugins/protocol/kv 负责 PluginKit 注册。
+原固定类型已移到 protocol/kv，签名、SHA-256、默认区块头和序号规则只存在于默认协议及其执行器。protocol/kv 提供私有不可变包装和显式 Wrap/Unwrap 函数；plugins/protocol 负责 PluginKit 注册。
 
 配置图中的 protocol/kv 实例由交易池、执行器、构块器、存储与协调器共同引用。通用组件在构造时检查依赖描述符；KV 专属执行器拒绝其他协议。
 

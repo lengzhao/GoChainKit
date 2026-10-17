@@ -5,15 +5,13 @@ import (
 	"crypto/ed25519"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
-	_ "github.com/lengzhao/GoChainKit/plugins/builder/basic"
-	_ "github.com/lengzhao/GoChainKit/plugins/executor/kv"
-	_ "github.com/lengzhao/GoChainKit/plugins/mempool/memory"
-	_ "github.com/lengzhao/GoChainKit/plugins/node/coordinator"
-	_ "github.com/lengzhao/GoChainKit/plugins/protocol/kv"
-	_ "github.com/lengzhao/GoChainKit/plugins/storage/bolt"
-	_ "github.com/lengzhao/GoChainKit/plugins/storage/memory"
-	kv "github.com/lengzhao/GoChainKit/protocol/kv"
-	"github.com/lengzhao/GoChainKit/protocol/kv/types"
+	_ "github.com/lengzhao/GoChainKit/plugins/builder"
+	_ "github.com/lengzhao/GoChainKit/plugins/executor"
+	_ "github.com/lengzhao/GoChainKit/plugins/mempool"
+	_ "github.com/lengzhao/GoChainKit/plugins/node"
+	_ "github.com/lengzhao/GoChainKit/plugins/protocol"
+	_ "github.com/lengzhao/GoChainKit/plugins/storage"
+	"github.com/lengzhao/GoChainKit/protocol/kv"
 	"github.com/lengzhao/pluginkit"
 	"github.com/lengzhao/pluginkit/build"
 	"github.com/lengzhao/pluginkit/config"
@@ -41,7 +39,7 @@ func productionGraph(store config.PluginUse, custom bool) map[string]any {
 }
 func defaultTransaction(t *testing.T, nonce uint64) core.Transaction {
 	t.Helper()
-	raw := types.Transaction{ChainID: "dev", Nonce: nonce, Key: []byte("hello"), Value: []byte("world")}
+	raw := kv.Transaction{ChainID: "dev", Nonce: nonce, Key: []byte("hello"), Value: []byte("world")}
 	if err := raw.Sign(ed25519.NewKeyFromSeed(make([]byte, 32))); err != nil {
 		t.Fatal(err)
 	}

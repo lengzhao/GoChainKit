@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"github.com/lengzhao/GoChainKit/core"
-	consensus "github.com/lengzhao/GoChainKit/plugins/consensus/single"
-	executor "github.com/lengzhao/GoChainKit/plugins/executor/kv"
-	kv "github.com/lengzhao/GoChainKit/protocol/kv"
+	"github.com/lengzhao/GoChainKit/plugins/consensus"
+	"github.com/lengzhao/GoChainKit/plugins/executor"
+	"github.com/lengzhao/GoChainKit/protocol/kv"
 	"github.com/lengzhao/pluginkit/build"
 	"github.com/lengzhao/pluginkit/config"
 	"testing"
@@ -78,7 +78,7 @@ func TestSingleNodeProduction(t *testing.T) {
 	if err != nil || len(remaining) != 0 {
 		t.Fatal("not removed", err)
 	}
-	c, err := consensus.New(consensus.Config{Interval: "1ms"})
+	c, err := consensus.NewSingle(consensus.SingleConfig{Interval: "1ms"})
 	if err != nil {
 		t.Fatal(err)
 	}

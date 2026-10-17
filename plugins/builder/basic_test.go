@@ -1,12 +1,12 @@
-package basic
+package builder
 
 import (
 	"context"
 	"errors"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
-	pool "github.com/lengzhao/GoChainKit/plugins/mempool/memory"
-	store "github.com/lengzhao/GoChainKit/plugins/storage/memory"
+	pool "github.com/lengzhao/GoChainKit/plugins/mempool"
+	store "github.com/lengzhao/GoChainKit/plugins/storage"
 	"testing"
 )
 
@@ -21,11 +21,11 @@ func (e failingExecutor) Execute(context.Context, core.StateReader, core.Block) 
 func TestBuildCustomFormatWithoutRemoving(t *testing.T) {
 	ctx := context.Background()
 	protocol := testprotocol.New("custom")
-	s, err := store.New(store.Config{}, store.Deps{Protocol: protocol})
+	s, err := store.NewMemory(store.MemoryConfig{}, store.Deps{Protocol: protocol})
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := pool.New(pool.Config{MaxTransactions: 10, MaxBytes: 4096}, pool.Deps{Protocol: protocol})
+	p, err := pool.NewMemory(pool.MemoryConfig{MaxTransactions: 10, MaxBytes: 4096}, pool.Deps{Protocol: protocol})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestBuildCustomFormatWithoutRemoving(t *testing.T) {
 		t.Fatal(err)
 	}
 	deps := Deps{Protocol: protocol, Pool: p, Chain: s, States: s, Executor: testprotocol.Executor{P: protocol}}
-	b, err := New(Config{MaxTransactionBytes: 4096}, deps)
+	b, err := NewBasic(BasicConfig{MaxTransactionBytes: 4096}, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestBuildCustomFormatWithoutRemoving(t *testing.T) {
 	}
 	failure := errors.New("executor failure")
 	deps.Executor = failingExecutor{deps.Executor, failure}
-	b, err = New(Config{MaxTransactionBytes: 4096}, deps)
+	b, err = NewBasic(BasicConfig{MaxTransactionBytes: 4096}, deps)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestBuildCustomFormatWithoutRemoving(t *testing.T) {
 		t.Fatal(err)
 	}
 	deps.Executor = testprotocol.Executor{P: testprotocol.New("other")}
-	if _, err := New(Config{MaxTransactionBytes: 4096}, deps); err == nil {
+	if _, err := NewBasic(BasicConfig{MaxTransactionBytes: 4096}, deps); err == nil {
 		t.Fatal("accepted incompatible executor")
 	}
 }

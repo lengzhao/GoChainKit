@@ -1,5 +1,5 @@
 // Package coordinator adapts the node coordinator to PluginKit construction.
-package coordinator
+package node
 
 import (
 	"github.com/lengzhao/GoChainKit/core"
@@ -7,7 +7,7 @@ import (
 	"github.com/lengzhao/pluginkit"
 )
 
-func init() { pluginkit.Register("node/coordinator", New) }
-func New(_ struct{}, deps node.CoordinatorDeps) (core.ConsensusHost, error) {
+func init() { pluginkit.Register("node/coordinator", NewCoordinator) }
+func NewCoordinator(_ struct{}, deps node.CoordinatorDeps) (core.ConsensusHost, error) {
 	return node.NewCoordinator(deps)
 }

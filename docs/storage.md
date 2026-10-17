@@ -34,7 +34,7 @@ Config 只包含 `path`，Deps 必须注入 Protocol。构造函数不打开文�
 ## 验证入口
 
 ```sh
-go test ./plugins/storage/bolt -v
+go test ./plugins/storage -v
 go test ./tests/integration -run TestPersistentProductionGraph -v
 ```
 

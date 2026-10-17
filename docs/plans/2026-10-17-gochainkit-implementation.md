@@ -52,19 +52,19 @@
 
 ## Task 3 有界交易池
 
-创建 `plugins/mempool/memory/{memory.go,memory_test.go,register.go}`。
+创建 `plugins/mempool/{memory.go,memory_test.go,register.go}`。
 
 1. 先测重复交易、队列满、按字节限额选取、选取后仍在队列、移除幂等、外部修改交易切片不影响池内容。
-2. 执行 `go test ./plugins/mempool/memory -v` 确认失败，再实现容量和大小限制、复制语义和互斥保护。
-3. 用 `go test -race ./plugins/mempool/memory` 验证并发 Add/Select/Remove。
+2. 执行 `go test ./plugins/mempool -v` 确认失败，再实现容量和大小限制、复制语义和互斥保护。
+3. 用 `go test -race ./plugins/mempool` 验证并发 Add/Select/Remove。
 4. 注册 `mempool/memory`，默认配置必须有界。
 
 ## Task 4 确定性键值执行器
 
-创建 `plugins/executor/kv/{executor.go,executor_test.go,register.go}`、`core/types/state_test.go`。
+创建 `plugins/executor/{executor.go,executor_test.go,register.go}`、`core/types/state_test.go`。
 
 1. 先测正确签名与连续序号的写入、错误签名、跨链交易、重复序号、超大键值和取消。
-2. 执行 `go test ./plugins/executor/kv -v` 确认失败。
+2. 执行 `go test ./plugins/executor -v` 确认失败。
 3. 实现按发送者地址隔离的键空间，明确键和值的长度上限；无效候选区块整体拒绝且不修改已提交状态。
 4. 规范状态根按编码后的完整键进行排序，以域分离、长度前缀编码计算哈希；包含账户序号。
 5. 不读取本地时间和外部数据；独立视图重放相同区块产生相同结果。用测试覆盖 map 插入顺序差异。
@@ -82,7 +82,7 @@
 
 ## Task 6 构块 单节点共识与节点生命周期
 
-创建 `plugins/builder/basic/`、`plugins/consensus/single/`、`plugins/transport/single/`、`node/` 下的实现、注册和测试文件。
+创建 `plugins/builder/`、`plugins/consensus/`、`plugins/transport/single/`、`node/` 下的实现、注册和测试文件。
 
 1. 先测提交交易后产生区块、空交易池策略、区块大小限制、提交成功后移除交易、提交失败仍保留可重试交易。
 2. 执行 `go test ./node ./plugins/builder/... ./plugins/consensus/...` 确认失败。

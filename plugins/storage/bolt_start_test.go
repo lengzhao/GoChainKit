@@ -1,11 +1,10 @@
-package bolt
+package storage
 
 import (
 	"context"
 	"errors"
 	"github.com/lengzhao/GoChainKit/core"
 	protocol "github.com/lengzhao/GoChainKit/protocol/kv"
-	"github.com/lengzhao/GoChainKit/protocol/kv/types"
 	db "go.etcd.io/bbolt"
 	"path/filepath"
 	"runtime"
@@ -23,7 +22,7 @@ func (p changedGenesis) Genesis(ctx context.Context) (core.Block, map[string][]b
 	}
 	v, _ := protocol.UnwrapBlock(b)
 	state := map[string][]byte{"initial": []byte("changed")}
-	v.Header.StateRoot = types.StateRoot(state)
+	v.Header.StateRoot = protocol.StateRoot(state)
 	b, e = protocol.WrapBlock(v)
 	return b, state, e
 }
@@ -36,7 +35,7 @@ func TestChangedGenesisRejectedAfterCommit(t *testing.T) {
 		t.Fatal(e)
 	}
 	s.Stop(ctx)
-	next, _ := New(Config{path}, Deps{changedGenesis{mustProtocol("dev")}})
+	next, _ := NewBolt(BoltConfig{path}, Deps{changedGenesis{mustProtocol("dev")}})
 	if e := next.Start(ctx); e == nil {
 		next.Stop(ctx)
 		t.Fatal("accepted changed genesis with same descriptor")
@@ -78,7 +77,7 @@ func TestRecoveryNotPublished(t *testing.T) {
 			s := openStore(t, path)
 			s.Stop(ctx)
 			p := &barrierProtocol{baseProtocol: mustProtocol("dev"), entered: make(chan struct{}), release: make(chan struct{}), fail: !stop}
-			s, _ = New(Config{path}, Deps{p})
+			s, _ = NewBolt(BoltConfig{path}, Deps{p})
 			done := make(chan error, 1)
 			go func() { done <- s.Start(ctx) }()
 			<-p.entered
@@ -127,7 +126,7 @@ func TestMissingGenesisMetadataRejected(t *testing.T) {
 		t.Fatal(e)
 	}
 	s.Stop(ctx)
-	s, _ = New(Config{path}, Deps{mustProtocol("dev")})
+	s, _ = NewBolt(BoltConfig{path}, Deps{mustProtocol("dev")})
 	if e := s.Start(ctx); e == nil {
 		s.Stop(ctx)
 		t.Fatal("accepted missing genesis metadata")
@@ -139,7 +138,7 @@ func TestRecoveryPublishesAfterValidation(t *testing.T) {
 	s := openStore(t, path)
 	s.Stop(ctx)
 	p := &barrierProtocol{baseProtocol: mustProtocol("dev"), entered: make(chan struct{}), release: make(chan struct{})}
-	s, _ = New(Config{path}, Deps{p})
+	s, _ = NewBolt(BoltConfig{path}, Deps{p})
 	done := make(chan error, 1)
 	go func() { done <- s.Start(ctx) }()
 	<-p.entered

@@ -3,7 +3,6 @@ package kv
 import (
 	"context"
 	"crypto/ed25519"
-	"github.com/lengzhao/GoChainKit/protocol/kv/types"
 	"testing"
 )
 
@@ -12,7 +11,7 @@ func TestProtocolRoundTrip(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	tx := types.Transaction{ChainID: "test", Nonce: 1, Key: []byte("k"), Value: []byte("v")}
+	tx := Transaction{ChainID: "test", Nonce: 1, Key: []byte("k"), Value: []byte("v")}
 	if e = tx.Sign(ed25519.NewKeyFromSeed(make([]byte, 32))); e != nil {
 		t.Fatal(e)
 	}

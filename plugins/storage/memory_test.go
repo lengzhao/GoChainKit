@@ -1,4 +1,4 @@
-package memory
+package storage
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 func TestCommitAndIsolation(t *testing.T) {
 	ctx := context.Background()
 	p, _ := protocol.New(protocol.Config{ChainID: "dev"})
-	s, e := New(Config{}, Deps{p})
+	s, e := NewMemory(MemoryConfig{}, Deps{p})
 	if e != nil {
 		t.Fatal(e)
 	}

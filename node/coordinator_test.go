@@ -5,9 +5,9 @@ import (
 	"errors"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
-	builder "github.com/lengzhao/GoChainKit/plugins/builder/basic"
-	pool "github.com/lengzhao/GoChainKit/plugins/mempool/memory"
-	store "github.com/lengzhao/GoChainKit/plugins/storage/memory"
+	"github.com/lengzhao/GoChainKit/plugins/builder"
+	pool "github.com/lengzhao/GoChainKit/plugins/mempool"
+	store "github.com/lengzhao/GoChainKit/plugins/storage"
 	"testing"
 )
 
@@ -25,11 +25,11 @@ func (f *failingCommitter) Commit(ctx context.Context, parent core.ID, b core.Bl
 func TestCommitOrderingAndProtocolValidation(t *testing.T) {
 	ctx := context.Background()
 	protocol := testprotocol.New("custom")
-	s, err := store.New(store.Config{}, store.Deps{Protocol: protocol})
+	s, err := store.NewMemory(store.MemoryConfig{}, store.Deps{Protocol: protocol})
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := pool.New(pool.Config{MaxTransactions: 10, MaxBytes: 4096}, pool.Deps{Protocol: protocol})
+	p, err := pool.NewMemory(pool.MemoryConfig{MaxTransactions: 10, MaxBytes: 4096}, pool.Deps{Protocol: protocol})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestCommitOrderingAndProtocolValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	e := testprotocol.Executor{P: protocol}
-	b, err := builder.New(builder.Config{MaxTransactionBytes: 4096}, builder.Deps{Protocol: protocol, Pool: p, Chain: s, States: s, Executor: e})
+	b, err := builder.NewBasic(builder.BasicConfig{MaxTransactionBytes: 4096}, builder.Deps{Protocol: protocol, Pool: p, Chain: s, States: s, Executor: e})
 	if err != nil {
 		t.Fatal(err)
 	}

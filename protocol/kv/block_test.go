@@ -1,4 +1,4 @@
-package types
+package kv
 
 import (
 	"crypto/ed25519"
