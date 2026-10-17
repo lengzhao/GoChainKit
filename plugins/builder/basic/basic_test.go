@@ -3,7 +3,7 @@ package basic
 import (
 	"context"
 	"errors"
-	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
 	pool "github.com/lengzhao/GoChainKit/plugins/mempool/memory"
 	store "github.com/lengzhao/GoChainKit/plugins/storage/memory"
@@ -11,12 +11,12 @@ import (
 )
 
 type failingExecutor struct {
-	contracts.Executor
+	core.Executor
 	err error
 }
 
-func (e failingExecutor) Execute(context.Context, contracts.StateReader, contracts.Block) (contracts.ExecutionResult, error) {
-	return contracts.ExecutionResult{}, e.err
+func (e failingExecutor) Execute(context.Context, core.StateReader, core.Block) (core.ExecutionResult, error) {
+	return core.ExecutionResult{}, e.err
 }
 func TestBuildCustomFormatWithoutRemoving(t *testing.T) {
 	ctx := context.Background()

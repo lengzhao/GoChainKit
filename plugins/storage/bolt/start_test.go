@@ -3,7 +3,7 @@ package bolt
 import (
 	"context"
 	"errors"
-	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/core"
 	protocol "github.com/lengzhao/GoChainKit/protocol/kv"
 	"github.com/lengzhao/GoChainKit/protocol/kv/types"
 	db "go.etcd.io/bbolt"
@@ -13,10 +13,10 @@ import (
 	"testing"
 )
 
-type baseProtocol interface{ contracts.Protocol }
+type baseProtocol interface{ core.Protocol }
 type changedGenesis struct{ baseProtocol }
 
-func (p changedGenesis) Genesis(ctx context.Context) (contracts.Block, map[string][]byte, error) {
+func (p changedGenesis) Genesis(ctx context.Context) (core.Block, map[string][]byte, error) {
 	b, _, e := p.baseProtocol.Genesis(ctx)
 	if e != nil {
 		return nil, nil, e
@@ -52,7 +52,7 @@ type barrierProtocol struct {
 	fail    bool
 }
 
-func (p *barrierProtocol) StateCommitment(ctx context.Context, state map[string][]byte) (contracts.Commitment, error) {
+func (p *barrierProtocol) StateCommitment(ctx context.Context, state map[string][]byte) (core.Commitment, error) {
 	p.mu.Lock()
 	p.calls++
 	n := p.calls
@@ -82,11 +82,11 @@ func TestRecoveryNotPublished(t *testing.T) {
 			done := make(chan error, 1)
 			go func() { done <- s.Start(ctx) }()
 			<-p.entered
-			if _, e := s.Head(ctx); !errors.Is(e, contracts.ErrClosed) {
+			if _, e := s.Head(ctx); !errors.Is(e, core.ErrClosed) {
 				t.Errorf("unverified database visible: %v", e)
 			}
 			g, _, _ := p.baseProtocol.Genesis(ctx)
-			if e := s.Commit(ctx, g.ID(), g, contracts.ExecutionResult{}); !errors.Is(e, contracts.ErrClosed) {
+			if e := s.Commit(ctx, g.ID(), g, core.ExecutionResult{}); !errors.Is(e, core.ErrClosed) {
 				t.Errorf("commit visible during recovery: %v", e)
 			}
 			var stopped chan error
@@ -113,7 +113,7 @@ func TestRecoveryNotPublished(t *testing.T) {
 					t.Fatal(e)
 				}
 			}
-			if _, e = s.Head(ctx); !errors.Is(e, contracts.ErrClosed) {
+			if _, e = s.Head(ctx); !errors.Is(e, core.ErrClosed) {
 				t.Fatal("database published after failure or stop", e)
 			}
 		})
@@ -143,7 +143,7 @@ func TestRecoveryPublishesAfterValidation(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- s.Start(ctx) }()
 	<-p.entered
-	if _, e := s.Head(ctx); !errors.Is(e, contracts.ErrClosed) {
+	if _, e := s.Head(ctx); !errors.Is(e, core.ErrClosed) {
 		t.Fatal(e)
 	}
 	close(p.release)

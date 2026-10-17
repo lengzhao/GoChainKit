@@ -4,17 +4,17 @@ package node
 import (
 	"context"
 	"fmt"
-	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/core"
 )
 
 type CoordinatorDeps struct {
-	Protocol  contracts.Protocol     `json:"protocol"`
-	Builder   contracts.BlockBuilder `json:"builder"`
-	Chain     contracts.ChainStore   `json:"chain"`
-	States    contracts.StateStore   `json:"states"`
-	Executor  contracts.Executor     `json:"executor"`
-	Committer contracts.Committer    `json:"committer"`
-	Pool      contracts.Mempool      `json:"pool"`
+	Protocol  core.Protocol     `json:"protocol"`
+	Builder   core.BlockBuilder `json:"builder"`
+	Chain     core.ChainStore   `json:"chain"`
+	States    core.StateStore   `json:"states"`
+	Executor  core.Executor     `json:"executor"`
+	Committer core.Committer    `json:"committer"`
+	Pool      core.Mempool      `json:"pool"`
 }
 
 // Coordinator serializes host operations with a cancellation-aware gate. Backends
@@ -28,7 +28,7 @@ func NewCoordinator(d CoordinatorDeps) (*Coordinator, error) {
 	if d.Protocol == nil || d.Builder == nil || d.Chain == nil || d.States == nil || d.Executor == nil || d.Committer == nil || d.Pool == nil {
 		return nil, fmt.Errorf("node: all protocol-bound dependencies required")
 	}
-	if err := contracts.RequireCompatible(d.Protocol.Protocol(), d.Builder, d.Chain, d.States, d.Executor, d.Committer, d.Pool); err != nil {
+	if err := core.RequireCompatible(d.Protocol.Protocol(), d.Builder, d.Chain, d.States, d.Executor, d.Committer, d.Pool); err != nil {
 		return nil, err
 	}
 	return &Coordinator{gate: make(chan struct{}, 1), deps: d}, nil
@@ -46,7 +46,7 @@ func (c *Coordinator) acquire(ctx context.Context) error {
 	}
 }
 func (c *Coordinator) release() { <-c.gate }
-func (c *Coordinator) freeze(b contracts.Block) (contracts.Block, error) {
+func (c *Coordinator) freeze(b core.Block) (core.Block, error) {
 	if b == nil || b.ID() == "" {
 		return nil, fmt.Errorf("empty block")
 	}
@@ -63,7 +63,7 @@ func (c *Coordinator) freeze(b contracts.Block) (contracts.Block, error) {
 	}
 	return copy, nil
 }
-func (c *Coordinator) Propose(ctx context.Context) (contracts.Block, error) {
+func (c *Coordinator) Propose(ctx context.Context) (core.Block, error) {
 	head, err := c.deps.Chain.Head(ctx)
 	if err != nil {
 		return nil, err
@@ -74,8 +74,8 @@ func (c *Coordinator) Propose(ctx context.Context) (contracts.Block, error) {
 	}
 	return c.freeze(block)
 }
-func (c *Coordinator) execute(ctx context.Context, b contracts.Block) (contracts.ExecutionResult, error) {
-	fail := func(err error) (contracts.ExecutionResult, error) { return contracts.ExecutionResult{}, err }
+func (c *Coordinator) execute(ctx context.Context, b core.Block) (core.ExecutionResult, error) {
+	fail := func(err error) (core.ExecutionResult, error) { return core.ExecutionResult{}, err }
 	if err := ctx.Err(); err != nil {
 		return fail(err)
 	}
@@ -100,7 +100,7 @@ func (c *Coordinator) execute(ctx context.Context, b contracts.Block) (contracts
 		return fail(closeErr)
 	}
 	if result.Parent != head {
-		return fail(contracts.ErrConflict)
+		return fail(core.ErrConflict)
 	}
 	result.BlockID = b.ID()
 	if err := c.deps.Protocol.ValidateBlock(ctx, c.deps.Chain, parent, b, result); err != nil {
@@ -108,7 +108,7 @@ func (c *Coordinator) execute(ctx context.Context, b contracts.Block) (contracts
 	}
 	return result, nil
 }
-func (c *Coordinator) Validate(ctx context.Context, b contracts.Block) error {
+func (c *Coordinator) Validate(ctx context.Context, b core.Block) error {
 	if err := c.acquire(ctx); err != nil {
 		return err
 	}
@@ -120,7 +120,7 @@ func (c *Coordinator) Validate(ctx context.Context, b contracts.Block) error {
 	_, err = c.execute(ctx, copy)
 	return err
 }
-func (c *Coordinator) Commit(ctx context.Context, b contracts.Block) error {
+func (c *Coordinator) Commit(ctx context.Context, b core.Block) error {
 	if err := c.acquire(ctx); err != nil {
 		return err
 	}
@@ -137,7 +137,7 @@ func (c *Coordinator) Commit(ctx context.Context, b contracts.Block) error {
 	if err != nil {
 		return err
 	}
-	ids := make([]contracts.ID, len(txs))
+	ids := make([]core.ID, len(txs))
 	for i, t := range txs {
 		if t == nil || t.ID() == "" {
 			return fmt.Errorf("empty transaction identity")

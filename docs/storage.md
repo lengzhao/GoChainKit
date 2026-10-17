@@ -19,7 +19,7 @@ Config 只包含 `path`，Deps 必须注入 Protocol。构造函数不打开文�
 - receipts：交易哈希到回执。
 - roots 与 results：协议状态承诺与执行结果，供恢复时检查绑定。
 
-交易索引通过可选的 `contracts.TransactionStore` 访问，返回 `contracts.ConfirmedTransaction`。它只覆盖已确认交易，待处理交易池不持久化。高度等字段由具体协议解析，不属于通用记录。
+交易索引通过可选的 `core.TransactionStore` 访问，返回 `core.ConfirmedTransaction`。它只覆盖已确认交易，待处理交易池不持久化。高度等字段由具体协议解析，不属于通用记录。
 
 区块和交易通过 Protocol 编码为字节，再写入存储封装，恢复时通过对应协议解码；不保存 Go 接口实例，也不依赖默认格式。状态与通用元数据采用 gob 封装，保留二进制键值。当前格式为 2，旧格式 1 或缺少必要创世绑定的库会被拒绝，未提供自动迁移工具。
 

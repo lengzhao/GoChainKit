@@ -5,7 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
-	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/core"
 	protocol "github.com/lengzhao/GoChainKit/protocol/kv"
 	"github.com/lengzhao/GoChainKit/protocol/kv/types"
 	db "go.etcd.io/bbolt"
@@ -76,7 +76,7 @@ func TestProcessExitDurability(t *testing.T) {
 	}
 }
 
-func candidate(t *testing.T, s *Store) (contracts.ID, contracts.Block, contracts.ExecutionResult) {
+func candidate(t *testing.T, s *Store) (core.ID, core.Block, core.ExecutionResult) {
 	t.Helper()
 	ctx := context.Background()
 	parent, err := s.Head(ctx)
@@ -92,13 +92,13 @@ func candidate(t *testing.T, s *Store) (contracts.ID, contracts.Block, contracts
 		t.Fatal(err)
 	}
 	w, _ := protocol.WrapTransaction(tx)
-	draft, err := s.p.Draft(ctx, previous, []contracts.Transaction{w})
+	draft, err := s.p.Draft(ctx, previous, []core.Transaction{w})
 	if err != nil {
 		t.Fatal(err)
 	}
 	state := map[string][]byte{string([]byte{0xff, 0, 0x80}): tx.Value}
 	root, _ := s.p.StateCommitment(ctx, state)
-	r := contracts.ExecutionResult{Parent: parent, BlockID: draft.ID(), Writes: state, StateRoot: root, Receipts: []contracts.Receipt{{TransactionID: w.ID(), Data: []byte{1}}}}
+	r := core.ExecutionResult{Parent: parent, BlockID: draft.ID(), Writes: state, StateRoot: root, Receipts: []core.Receipt{{TransactionID: w.ID(), Data: []byte{1}}}}
 	b, err := s.p.Finalize(ctx, draft, r)
 	if err != nil {
 		t.Fatal(err)
@@ -157,7 +157,7 @@ func TestDiskRoundTrip(t *testing.T) {
 	if err != nil || string(data) != string([]byte{0xff, 0, 0x80}) {
 		t.Fatal("binary state damaged", err)
 	}
-	if err := s.Commit(ctx, parent, b, result); !errors.Is(err, contracts.ErrAlreadyCommitted) {
+	if err := s.Commit(ctx, parent, b, result); !errors.Is(err, core.ErrAlreadyCommitted) {
 		t.Fatal("duplicate commit", err)
 	}
 }
@@ -175,18 +175,18 @@ func TestRollbackAndWrongChain(t *testing.T) {
 	if head != parent {
 		t.Fatal("partial head")
 	}
-	if _, err := s.Block(ctx, result.BlockID); !errors.Is(err, contracts.ErrNotFound) {
+	if _, err := s.Block(ctx, result.BlockID); !errors.Is(err, core.ErrNotFound) {
 		t.Fatal("partial block", err)
 	}
 	txs, _ := s.p.Transactions(b)
 	txid := txs[0].ID()
-	if _, err := s.Transaction(ctx, txid); !errors.Is(err, contracts.ErrNotFound) {
+	if _, err := s.Transaction(ctx, txid); !errors.Is(err, core.ErrNotFound) {
 		t.Fatal("partial transaction", err)
 	}
-	if _, err := s.Receipt(ctx, txid); !errors.Is(err, contracts.ErrNotFound) {
+	if _, err := s.Receipt(ctx, txid); !errors.Is(err, core.ErrNotFound) {
 		t.Fatal("partial receipt", err)
 	}
-	if _, err := s.Snapshot(ctx, result.BlockID); !errors.Is(err, contracts.ErrNotFound) {
+	if _, err := s.Snapshot(ctx, result.BlockID); !errors.Is(err, core.ErrNotFound) {
 		t.Fatal("partial state", err)
 	}
 	if err := s.Stop(ctx); err != nil {
@@ -208,7 +208,7 @@ func TestRollbackAndWrongChain(t *testing.T) {
 	}
 }
 
-func mustProtocol(network string) contracts.Protocol {
+func mustProtocol(network string) core.Protocol {
 	p, e := protocol.New(protocol.Config{ChainID: network})
 	if e != nil {
 		panic(e)

@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/runtime/ledger"
 	"github.com/lengzhao/pluginkit"
 	"sync"
@@ -13,17 +13,17 @@ import (
 
 type Config struct{}
 type Deps struct {
-	Protocol contracts.Protocol `json:"protocol"`
+	Protocol core.Protocol `json:"protocol"`
 }
 type Store struct {
 	mu           sync.RWMutex
-	p            contracts.Protocol
-	head         contracts.ID
-	blocks       map[contracts.ID][]byte
-	states       map[contracts.ID]map[string][]byte
-	roots        map[contracts.ID]contracts.Commitment
-	transactions map[contracts.ID]ledger.Record
-	receipts     map[contracts.ID]contracts.Receipt
+	p            core.Protocol
+	head         core.ID
+	blocks       map[core.ID][]byte
+	states       map[core.ID]map[string][]byte
+	roots        map[core.ID]core.Commitment
+	transactions map[core.ID]ledger.Record
+	receipts     map[core.ID]core.Receipt
 }
 
 func init() { pluginkit.Register("storage/memory", New) }
@@ -38,10 +38,10 @@ func New(_ Config, d Deps) (*Store, error) {
 	if e != nil {
 		return nil, e
 	}
-	return &Store{p: d.Protocol, head: g.ID, blocks: map[contracts.ID][]byte{g.ID: g.Block}, states: map[contracts.ID]map[string][]byte{g.ID: g.State}, roots: map[contracts.ID]contracts.Commitment{g.ID: g.Root}, transactions: map[contracts.ID]ledger.Record{}, receipts: map[contracts.ID]contracts.Receipt{}}, nil
+	return &Store{p: d.Protocol, head: g.ID, blocks: map[core.ID][]byte{g.ID: g.Block}, states: map[core.ID]map[string][]byte{g.ID: g.State}, roots: map[core.ID]core.Commitment{g.ID: g.Root}, transactions: map[core.ID]ledger.Record{}, receipts: map[core.ID]core.Receipt{}}, nil
 }
-func (s *Store) Protocol() contracts.ProtocolDescriptor { return s.p.Protocol() }
-func (s *Store) Head(ctx context.Context) (contracts.ID, error) {
+func (s *Store) Protocol() core.ProtocolDescriptor { return s.p.Protocol() }
+func (s *Store) Head(ctx context.Context) (core.ID, error) {
 	if e := ctx.Err(); e != nil {
 		return "", e
 	}
@@ -49,7 +49,7 @@ func (s *Store) Head(ctx context.Context) (contracts.ID, error) {
 	defer s.mu.RUnlock()
 	return s.head, nil
 }
-func (s *Store) Block(ctx context.Context, id contracts.ID) (contracts.Block, error) {
+func (s *Store) Block(ctx context.Context, id core.ID) (core.Block, error) {
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
@@ -58,38 +58,38 @@ func (s *Store) Block(ctx context.Context, id contracts.ID) (contracts.Block, er
 	data = bytes.Clone(data)
 	s.mu.RUnlock()
 	if !ok {
-		return nil, contracts.ErrNotFound
+		return nil, core.ErrNotFound
 	}
 	return ledger.DecodeBlock(s.p, data, id)
 }
-func (s *Store) Receipt(ctx context.Context, id contracts.ID) (contracts.Receipt, error) {
+func (s *Store) Receipt(ctx context.Context, id core.ID) (core.Receipt, error) {
 	if e := ctx.Err(); e != nil {
-		return contracts.Receipt{}, e
+		return core.Receipt{}, e
 	}
 	s.mu.RLock()
 	r, ok := s.receipts[id]
 	r.Data = bytes.Clone(r.Data)
 	s.mu.RUnlock()
 	if !ok {
-		return r, contracts.ErrNotFound
+		return r, core.ErrNotFound
 	}
 	return r, nil
 }
-func (s *Store) Transaction(ctx context.Context, id contracts.ID) (contracts.ConfirmedTransaction, error) {
+func (s *Store) Transaction(ctx context.Context, id core.ID) (core.ConfirmedTransaction, error) {
 	if e := ctx.Err(); e != nil {
-		return contracts.ConfirmedTransaction{}, e
+		return core.ConfirmedTransaction{}, e
 	}
 	s.mu.RLock()
 	r, ok := s.transactions[id]
 	r.Data = bytes.Clone(r.Data)
 	s.mu.RUnlock()
 	if !ok {
-		return contracts.ConfirmedTransaction{}, contracts.ErrNotFound
+		return core.ConfirmedTransaction{}, core.ErrNotFound
 	}
 	t, e := ledger.DecodeTransaction(s.p, r.Data, id)
-	return contracts.ConfirmedTransaction{Transaction: t, BlockID: r.BlockID, Index: r.Index}, e
+	return core.ConfirmedTransaction{Transaction: t, BlockID: r.BlockID, Index: r.Index}, e
 }
-func (s *Store) Snapshot(ctx context.Context, id contracts.ID) (contracts.StateReader, error) {
+func (s *Store) Snapshot(ctx context.Context, id core.ID) (core.StateReader, error) {
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
@@ -97,11 +97,11 @@ func (s *Store) Snapshot(ctx context.Context, id contracts.ID) (contracts.StateR
 	defer s.mu.RUnlock()
 	state, ok := s.states[id]
 	if !ok {
-		return nil, contracts.ErrNotFound
+		return nil, core.ErrNotFound
 	}
 	return &ledger.Snapshot{State: ledger.Copy(state), Commitment: s.roots[id]}, nil
 }
-func (s *Store) Commit(ctx context.Context, parent contracts.ID, b contracts.Block, r contracts.ExecutionResult) error {
+func (s *Store) Commit(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) error {
 	if b == nil {
 		return fmt.Errorf("nil block")
 	}
@@ -110,10 +110,10 @@ func (s *Store) Commit(ctx context.Context, parent contracts.ID, b contracts.Blo
 	head := s.head
 	s.mu.RUnlock()
 	if exists {
-		return contracts.ErrAlreadyCommitted
+		return core.ErrAlreadyCommitted
 	}
 	if head != parent {
-		return contracts.ErrConflict
+		return core.ErrConflict
 	}
 	v, e := ledger.Prepare(ctx, s.p, s, parent, b, r)
 	if e != nil {
@@ -125,10 +125,10 @@ func (s *Store) Commit(ctx context.Context, parent contracts.ID, b contracts.Blo
 		return e
 	}
 	if _, ok := s.blocks[v.ID]; ok {
-		return contracts.ErrAlreadyCommitted
+		return core.ErrAlreadyCommitted
 	}
 	if s.head != parent {
-		return contracts.ErrConflict
+		return core.ErrConflict
 	}
 	for id := range v.Transactions {
 		if _, ok := s.transactions[id]; ok {

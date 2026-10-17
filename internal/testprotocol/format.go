@@ -9,7 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/core"
 	"io"
 	"sort"
 )
@@ -19,24 +19,24 @@ type Tx struct {
 	Body  []byte
 }
 
-func (t Tx) ID() contracts.ID {
+func (t Tx) ID() core.ID {
 	data, _ := json.Marshal(t)
 	h := sha512.Sum512(data)
-	return contracts.ID("tx/" + string(h[:]))
+	return core.ID("tx/" + string(h[:]))
 }
 
 type Frame struct {
-	Ancestor   contracts.ID
+	Ancestor   core.ID
 	Revision   uint64
 	Records    []Tx
-	Commitment contracts.Commitment
+	Commitment core.Commitment
 	OtherLinks []string
 }
 
-func (b Frame) ID() contracts.ID {
+func (b Frame) ID() core.ID {
 	data, _ := encodeFrame(b)
 	h := sha512.Sum512(data)
-	return contracts.ID("frame/" + string(h[:]))
+	return core.ID("frame/" + string(h[:]))
 }
 
 type wireFrame struct {
@@ -54,8 +54,8 @@ func encodeFrame(b Frame) ([]byte, error) {
 type Format struct{ Network string }
 
 func New(network string) *Format { return &Format{network} }
-func (p *Format) Protocol() contracts.ProtocolDescriptor {
-	return contracts.ProtocolDescriptor{Name: "test-flex", Version: "7", Network: p.Network}
+func (p *Format) Protocol() core.ProtocolDescriptor {
+	return core.ProtocolDescriptor{Name: "test-flex", Version: "7", Network: p.Network}
 }
 func strict(data []byte, v any) error {
 	d := json.NewDecoder(bytes.NewReader(data))
@@ -69,14 +69,14 @@ func strict(data []byte, v any) error {
 	}
 	return nil
 }
-func (p *Format) EncodeTransaction(t contracts.Transaction) ([]byte, error) {
+func (p *Format) EncodeTransaction(t core.Transaction) ([]byte, error) {
 	v, ok := t.(Tx)
 	if !ok {
 		return nil, fmt.Errorf("not a flex transaction")
 	}
 	return json.Marshal(v)
 }
-func (p *Format) DecodeTransaction(data []byte) (contracts.Transaction, error) {
+func (p *Format) DecodeTransaction(data []byte) (core.Transaction, error) {
 	var t Tx
 	err := strict(data, &t)
 	if err != nil {
@@ -87,41 +87,41 @@ func (p *Format) DecodeTransaction(data []byte) (contracts.Transaction, error) {
 	}
 	return t, nil
 }
-func (p *Format) ValidateTransaction(ctx context.Context, t contracts.Transaction) error {
+func (p *Format) ValidateTransaction(ctx context.Context, t core.Transaction) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	v, ok := t.(Tx)
 	if !ok || v.Label == "" || len(v.Label) > 256 || len(v.Body) > 4096 {
-		return contracts.ErrInvalidTransaction
+		return core.ErrInvalidTransaction
 	}
 	return nil
 }
-func (p *Format) EncodeBlock(b contracts.Block) ([]byte, error) {
+func (p *Format) EncodeBlock(b core.Block) ([]byte, error) {
 	v, ok := b.(Frame)
 	if !ok {
 		return nil, fmt.Errorf("not a flex frame")
 	}
 	return encodeFrame(v)
 }
-func (p *Format) DecodeBlock(data []byte) (contracts.Block, error) {
+func (p *Format) DecodeBlock(data []byte) (core.Block, error) {
 	var b wireFrame
 	err := strict(data, &b)
-	return Frame{Ancestor: contracts.ID(string(b.Ancestor)), Revision: b.Revision, Records: b.Records, Commitment: contracts.Commitment(string(b.Commitment)), OtherLinks: b.OtherLinks}, err
+	return Frame{Ancestor: core.ID(string(b.Ancestor)), Revision: b.Revision, Records: b.Records, Commitment: core.Commitment(string(b.Commitment)), OtherLinks: b.OtherLinks}, err
 }
-func (p *Format) Transactions(b contracts.Block) ([]contracts.Transaction, error) {
+func (p *Format) Transactions(b core.Block) ([]core.Transaction, error) {
 	v, ok := b.(Frame)
 	if !ok {
 		return nil, fmt.Errorf("not a flex frame")
 	}
-	out := make([]contracts.Transaction, len(v.Records))
+	out := make([]core.Transaction, len(v.Records))
 	for i, t := range v.Records {
 		t.Body = bytes.Clone(t.Body)
 		out[i] = t
 	}
 	return out, nil
 }
-func (p *Format) StateCommitment(ctx context.Context, state map[string][]byte) (contracts.Commitment, error) {
+func (p *Format) StateCommitment(ctx context.Context, state map[string][]byte) (core.Commitment, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
@@ -139,13 +139,13 @@ func (p *Format) StateCommitment(ctx context.Context, state map[string][]byte) (
 		b.Write(state[k])
 	}
 	h := sha512.Sum512(b.Bytes())
-	return contracts.Commitment(string(h[:])), nil
+	return core.Commitment(string(h[:])), nil
 }
-func (p *Format) Genesis(ctx context.Context) (contracts.Block, map[string][]byte, error) {
+func (p *Format) Genesis(ctx context.Context) (core.Block, map[string][]byte, error) {
 	root, err := p.StateCommitment(ctx, nil)
 	return Frame{Commitment: root}, map[string][]byte{}, err
 }
-func (p *Format) Draft(ctx context.Context, parent contracts.Block, txs []contracts.Transaction) (contracts.Block, error) {
+func (p *Format) Draft(ctx context.Context, parent core.Block, txs []core.Transaction) (core.Block, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -164,7 +164,7 @@ func (p *Format) Draft(ctx context.Context, parent contracts.Block, txs []contra
 	}
 	return b, nil
 }
-func (p *Format) Finalize(ctx context.Context, d contracts.Block, r contracts.ExecutionResult) (contracts.Block, error) {
+func (p *Format) Finalize(ctx context.Context, d core.Block, r core.ExecutionResult) (core.Block, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -175,7 +175,7 @@ func (p *Format) Finalize(ctx context.Context, d contracts.Block, r contracts.Ex
 	b.Commitment = r.StateRoot
 	return b, nil
 }
-func (p *Format) ValidateBlock(ctx context.Context, _ contracts.ChainStore, parent, b contracts.Block, r contracts.ExecutionResult) error {
+func (p *Format) ValidateBlock(ctx context.Context, _ core.ChainStore, parent, b core.Block, r core.ExecutionResult) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -185,7 +185,7 @@ func (p *Format) ValidateBlock(ctx context.Context, _ contracts.ChainStore, pare
 	}
 	v, ok := b.(Frame)
 	if !ok || v.Ancestor != parent.ID() || r.Parent != parent.ID() || v.Revision != old.Revision+1 || v.Commitment != r.StateRoot || r.BlockID != b.ID() {
-		return contracts.ErrConflict
+		return core.ErrConflict
 	}
 	for _, t := range v.Records {
 		if err := p.ValidateTransaction(ctx, t); err != nil {
@@ -195,17 +195,17 @@ func (p *Format) ValidateBlock(ctx context.Context, _ contracts.ChainStore, pare
 	return nil
 }
 
-type Executor struct{ P contracts.Protocol }
+type Executor struct{ P core.Protocol }
 
-func (e Executor) Protocol() contracts.ProtocolDescriptor { return e.P.Protocol() }
-func (e Executor) Execute(ctx context.Context, s contracts.StateReader, b contracts.Block) (contracts.ExecutionResult, error) {
+func (e Executor) Protocol() core.ProtocolDescriptor { return e.P.Protocol() }
+func (e Executor) Execute(ctx context.Context, s core.StateReader, b core.Block) (core.ExecutionResult, error) {
 	v, ok := b.(Frame)
 	if !ok {
-		return contracts.ExecutionResult{}, fmt.Errorf("not flex")
+		return core.ExecutionResult{}, fmt.Errorf("not flex")
 	}
 	state, err := s.Entries(ctx)
 	if err != nil {
-		return contracts.ExecutionResult{}, err
+		return core.ExecutionResult{}, err
 	}
 	if state == nil {
 		state = map[string][]byte{}
@@ -213,11 +213,11 @@ func (e Executor) Execute(ctx context.Context, s contracts.StateReader, b contra
 	writes := map[string][]byte{}
 	for _, t := range v.Records {
 		if err := e.P.ValidateTransaction(ctx, t); err != nil {
-			return contracts.ExecutionResult{}, err
+			return core.ExecutionResult{}, err
 		}
 		state[t.Label] = bytes.Clone(t.Body)
 		writes[t.Label] = bytes.Clone(t.Body)
 	}
 	root, err := e.P.StateCommitment(ctx, state)
-	return contracts.ExecutionResult{Parent: v.Ancestor, BlockID: b.ID(), Writes: writes, StateRoot: root}, err
+	return core.ExecutionResult{Parent: v.Ancestor, BlockID: b.ID(), Writes: writes, StateRoot: root}, err
 }

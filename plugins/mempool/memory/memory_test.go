@@ -3,7 +3,7 @@ package memory
 import (
 	"context"
 	"errors"
-	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
 	"sync"
 	"testing"
@@ -24,7 +24,7 @@ func TestCapacitySelectionAndOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 	tx.Body[0] = 'x'
-	if err := p.Add(ctx, testprotocol.Tx{Label: "b"}); !errors.Is(err, contracts.ErrFull) {
+	if err := p.Add(ctx, testprotocol.Tx{Label: "b"}); !errors.Is(err, core.ErrFull) {
 		t.Fatal(err)
 	}
 	small, err := p.Select(ctx, 1)
@@ -45,7 +45,7 @@ func TestCapacitySelectionAndOwnership(t *testing.T) {
 		t.Fatal("leaked internal data", err)
 	}
 	for range 2 {
-		if err := p.Remove(ctx, []contracts.ID{id}); err != nil {
+		if err := p.Remove(ctx, []core.ID{id}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -58,7 +58,7 @@ func TestInvalidAndCanceled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := p.Add(context.Background(), testprotocol.Tx{}); !errors.Is(err, contracts.ErrInvalidTransaction) {
+	if err := p.Add(context.Background(), testprotocol.Tx{}); !errors.Is(err, core.ErrInvalidTransaction) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -89,7 +89,7 @@ func TestConcurrentPoolAccess(t *testing.T) {
 				if _, err := p.Select(ctx, 4096); err != nil {
 					t.Error(err)
 				}
-				if err := p.Remove(ctx, []contracts.ID{tx.ID()}); err != nil {
+				if err := p.Remove(ctx, []core.ID{tx.ID()}); err != nil {
 					t.Error(err)
 				}
 			}

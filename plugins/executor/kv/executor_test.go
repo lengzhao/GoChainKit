@@ -3,7 +3,7 @@ package kv
 import (
 	"context"
 	"crypto/ed25519"
-	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/core"
 	protocol "github.com/lengzhao/GoChainKit/protocol/kv"
 	"github.com/lengzhao/GoChainKit/protocol/kv/types"
 	"testing"
@@ -11,9 +11,9 @@ import (
 
 type snapshot struct{}
 
-func (snapshot) Get(context.Context, []byte) ([]byte, error)        { return nil, contracts.ErrNotFound }
+func (snapshot) Get(context.Context, []byte) ([]byte, error)        { return nil, core.ErrNotFound }
 func (snapshot) Entries(context.Context) (map[string][]byte, error) { return map[string][]byte{}, nil }
-func (snapshot) Root() contracts.Commitment                         { return "" }
+func (snapshot) Root() core.Commitment                              { return "" }
 func (snapshot) Close() error                                       { return nil }
 func TestExecuteFinalize(t *testing.T) {
 	ctx := context.Background()
@@ -26,7 +26,7 @@ func TestExecuteFinalize(t *testing.T) {
 	tx := types.Transaction{ChainID: "test", Nonce: 1, Key: []byte("k"), Value: []byte("v")}
 	tx.Sign(ed25519.NewKeyFromSeed(make([]byte, 32)))
 	w, _ := protocol.WrapTransaction(tx)
-	d, err := p.Draft(ctx, g, []contracts.Transaction{w})
+	d, err := p.Draft(ctx, g, []core.Transaction{w})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestExecuteFinalize(t *testing.T) {
 	if err = p.ValidateBlock(ctx, nil, g, b, r); err == nil {
 		t.Fatal("invalid receipt accepted")
 	}
-	bad, _ := p.Draft(ctx, g, []contracts.Transaction{w, w})
+	bad, _ := p.Draft(ctx, g, []core.Transaction{w, w})
 	if _, err = e.Execute(ctx, snapshot{}, bad); err == nil {
 		t.Fatal("duplicate nonce accepted")
 	}

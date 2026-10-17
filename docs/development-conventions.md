@@ -12,9 +12,9 @@
 
 沿用 AgentKit 的原则：PluginKit 负责通用装配，领域框架定义语义，插件提供实现。
 
-- `core/contracts` 中的 ID、Commitment 与对象接口：不限定长度、字段、签名或区块拓扑，不依赖默认协议。
+- `core` 中的 ID、Commitment 与对象接口：不限定长度、字段、签名或区块拓扑，不依赖默认协议。
 - `protocol/<name>`：具体链的格式、编解码与规则；默认 KV 类型位于 `protocol/kv/types`。
-- `core/contracts`：领域接口与错误契约，可依赖公共类型，不依赖插件实现。
+- `core`：领域接口与错误契约，可依赖公共类型，不依赖插件实现。
 - `runtime/<capability>`：确有多个消费者需要的共享实现，不负责插件注册。
 - `plugins/<capability>/<implementation>`：配置适配、构造、注册及具体实现。
 - `node`：链运行协调与生命周期。普通协调代码依赖接口；若注册为根插件，将注册适配放在 `plugins/node/default`。
@@ -23,7 +23,7 @@
 
 生产插件包之间不得相互 import，包括为调用另一插件的 New 而建立的依赖。用 Deps 注入接口；共享算法提取到 runtime。仅 assembly、聚合注册包和集成测试可直接导入多个插件包。
 
-AgentKit 使用根包和 cap 放置契约；本项目通过 core/contracts 定义通用契约，通过 protocol 隔离具体格式。当前接口以 [模块与协议接口](interfaces.md) 为准。
+AgentKit 使用根包和 cap 放置契约；本项目通过 core 定义通用契约，通过 protocol 隔离具体格式。当前接口以 [模块与协议接口](interfaces.md) 为准。
 
 ## 2 Go 编程习惯
 
@@ -56,12 +56,12 @@ type Config struct {
 }
 
 type Deps struct {
-    Protocol contracts.Protocol `json:"protocol"`
-    Executor contracts.Executor `json:"executor"`
+    Protocol core.Protocol `json:"protocol"`
+    Executor core.Executor `json:"executor"`
 }
 
 // constructor shape
-func New(cfg Config, deps Deps) (contracts.BlockBuilder, error)
+func New(cfg Config, deps Deps) (core.BlockBuilder, error)
 ```
 
 上例仅表示形状；正式代码需要真实声明、实现和测试。

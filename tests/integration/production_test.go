@@ -3,7 +3,7 @@ package integration
 import (
 	"context"
 	"errors"
-	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/core"
 	consensus "github.com/lengzhao/GoChainKit/plugins/consensus/single"
 	executor "github.com/lengzhao/GoChainKit/plugins/executor/kv"
 	kv "github.com/lengzhao/GoChainKit/protocol/kv"
@@ -14,12 +14,12 @@ import (
 )
 
 type stopAfter struct {
-	contracts.ConsensusHost
+	core.ConsensusHost
 	cancel context.CancelFunc
 	count  int
 }
 
-func (h *stopAfter) Commit(ctx context.Context, b contracts.Block) error {
+func (h *stopAfter) Commit(ctx context.Context, b core.Block) error {
 	if err := h.ConsensusHost.Commit(ctx, b); err != nil {
 		return err
 	}
@@ -32,13 +32,13 @@ func (h *stopAfter) Commit(ctx context.Context, b contracts.Block) error {
 func TestSingleNodeProduction(t *testing.T) {
 	ctx := context.Background()
 	graph := productionGraph(config.PluginUse{Use: "storage/memory"}, false)
-	host, result, err := build.Build[contracts.ConsensusHost](ctx, graph, "host")
+	host, result, err := build.Build[core.ConsensusHost](ctx, graph, "host")
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, _ := build.RequireByID[contracts.Mempool](result, "pool", "pool")
-	s, _ := build.RequireByID[contracts.ChainStore](result, "store", "store")
-	states, _ := build.RequireByID[contracts.StateStore](result, "store", "store")
+	p, _ := build.RequireByID[core.Mempool](result, "pool", "pool")
+	s, _ := build.RequireByID[core.ChainStore](result, "store", "store")
+	states, _ := build.RequireByID[core.StateStore](result, "store", "store")
 	tx := defaultTransaction(t, 1)
 	if err := p.Add(ctx, tx); err != nil {
 		t.Fatal(err)

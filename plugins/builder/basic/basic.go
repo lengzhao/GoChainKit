@@ -4,7 +4,7 @@ package basic
 import (
 	"context"
 	"fmt"
-	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/pluginkit"
 )
 
@@ -12,11 +12,11 @@ type Config struct {
 	MaxTransactionBytes int `json:"maxTransactionBytes"`
 }
 type Deps struct {
-	Protocol contracts.Protocol   `json:"protocol"`
-	Pool     contracts.Mempool    `json:"pool"`
-	Chain    contracts.ChainStore `json:"chain"`
-	States   contracts.StateStore `json:"states"`
-	Executor contracts.Executor   `json:"executor"`
+	Protocol core.Protocol   `json:"protocol"`
+	Pool     core.Mempool    `json:"pool"`
+	Chain    core.ChainStore `json:"chain"`
+	States   core.StateStore `json:"states"`
+	Executor core.Executor   `json:"executor"`
 }
 type builder struct {
 	cfg  Config
@@ -24,19 +24,19 @@ type builder struct {
 }
 
 func init() { pluginkit.Register("builder/basic", New) }
-func New(cfg Config, d Deps) (contracts.BlockBuilder, error) {
+func New(cfg Config, d Deps) (core.BlockBuilder, error) {
 	if cfg.MaxTransactionBytes <= 0 || d.Protocol == nil || d.Pool == nil || d.Chain == nil || d.States == nil || d.Executor == nil {
 		return nil, fmt.Errorf("builder/basic: protocol, dependencies and positive budget required")
 	}
-	if err := contracts.RequireCompatible(d.Protocol.Protocol(), d.Pool, d.Chain, d.States, d.Executor); err != nil {
+	if err := core.RequireCompatible(d.Protocol.Protocol(), d.Pool, d.Chain, d.States, d.Executor); err != nil {
 		return nil, err
 	}
 	return &builder{cfg, d}, nil
 }
-func (b *builder) Protocol() contracts.ProtocolDescriptor { return b.deps.Protocol.Protocol() }
-func (b *builder) Build(ctx context.Context, head contracts.ID) (contracts.Block, contracts.ExecutionResult, error) {
-	fail := func(err error) (contracts.Block, contracts.ExecutionResult, error) {
-		return nil, contracts.ExecutionResult{}, err
+func (b *builder) Protocol() core.ProtocolDescriptor { return b.deps.Protocol.Protocol() }
+func (b *builder) Build(ctx context.Context, head core.ID) (core.Block, core.ExecutionResult, error) {
+	fail := func(err error) (core.Block, core.ExecutionResult, error) {
+		return nil, core.ExecutionResult{}, err
 	}
 	if err := ctx.Err(); err != nil {
 		return fail(err)
@@ -55,14 +55,14 @@ func (b *builder) Build(ctx context.Context, head contracts.ID) (contracts.Block
 	budget := b.cfg.MaxTransactionBytes
 	for i, t := range txs {
 		if err := b.deps.Protocol.ValidateTransaction(ctx, t); err != nil {
-			return fail(fmt.Errorf("%w: %v", contracts.ErrInvalidTransaction, err))
+			return fail(fmt.Errorf("%w: %v", core.ErrInvalidTransaction, err))
 		}
 		data, err := b.deps.Protocol.EncodeTransaction(t)
 		if err != nil {
 			return fail(err)
 		}
 		if len(data) > budget {
-			return fail(contracts.ErrFull)
+			return fail(core.ErrFull)
 		}
 		budget -= len(data)
 		txs[i], err = b.deps.Protocol.DecodeTransaction(data)

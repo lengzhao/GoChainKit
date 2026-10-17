@@ -97,7 +97,7 @@ Node 启动前完成依赖、配置和协议兼容性校验；依赖先启动，
 ```text
 cmd/gochainkit/       命令行入口
 core/types/          公共协议类型和编码
-core/contracts/      模块接口
+core/      模块接口
 node/                编排和生命周期
 plugins/             各模块最小实现和注册
 presets/             单节点配置

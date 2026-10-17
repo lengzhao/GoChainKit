@@ -1,5 +1,5 @@
-// Package contracts defines format-independent blockchain plugin contracts.
-package contracts
+// Package core defines format-independent blockchain plugin core.
+package core
 
 import (
 	"context"

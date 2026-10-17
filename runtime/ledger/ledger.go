@@ -5,22 +5,22 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/core"
 )
 
 type Record struct {
 	Data    []byte
-	BlockID contracts.ID
+	BlockID core.ID
 	Index   uint64
 }
 type Prepared struct {
-	Result       contracts.ExecutionResult
-	ID           contracts.ID
+	Result       core.ExecutionResult
+	ID           core.ID
 	Block        []byte
 	State        map[string][]byte
-	Root         contracts.Commitment
-	Transactions map[contracts.ID]Record
-	Receipts     map[contracts.ID]contracts.Receipt
+	Root         core.Commitment
+	Transactions map[core.ID]Record
+	Receipts     map[core.ID]core.Receipt
 }
 
 func Copy(s map[string][]byte) map[string][]byte {
@@ -30,7 +30,7 @@ func Copy(s map[string][]byte) map[string][]byte {
 	}
 	return o
 }
-func DecodeBlock(p contracts.Protocol, data []byte, id contracts.ID) (contracts.Block, error) {
+func DecodeBlock(p core.Protocol, data []byte, id core.ID) (core.Block, error) {
 	b, e := p.DecodeBlock(bytes.Clone(data))
 	if e != nil {
 		return nil, e
@@ -47,7 +47,7 @@ func DecodeBlock(p contracts.Protocol, data []byte, id contracts.ID) (contracts.
 	}
 	return b, nil
 }
-func DecodeTransaction(p contracts.Protocol, data []byte, id contracts.ID) (contracts.Transaction, error) {
+func DecodeTransaction(p core.Protocol, data []byte, id core.ID) (core.Transaction, error) {
 	t, e := p.DecodeTransaction(bytes.Clone(data))
 	if e != nil {
 		return nil, e
@@ -64,7 +64,7 @@ func DecodeTransaction(p contracts.Protocol, data []byte, id contracts.ID) (cont
 	}
 	return t, nil
 }
-func Genesis(ctx context.Context, p contracts.Protocol) (Prepared, error) {
+func Genesis(ctx context.Context, p core.Protocol) (Prepared, error) {
 	b, s, e := p.Genesis(ctx)
 	if e != nil {
 		return Prepared{}, e
@@ -82,7 +82,7 @@ func Genesis(ctx context.Context, p contracts.Protocol) (Prepared, error) {
 	root, e := p.StateCommitment(ctx, s)
 	return Prepared{ID: b.ID(), Block: bytes.Clone(data), State: Copy(s), Root: root}, e
 }
-func Prepare(ctx context.Context, p contracts.Protocol, chain contracts.ChainStore, parent contracts.ID, b contracts.Block, r contracts.ExecutionResult) (Prepared, error) {
+func Prepare(ctx context.Context, p core.Protocol, chain core.ChainStore, parent core.ID, b core.Block, r core.ExecutionResult) (Prepared, error) {
 	bad := func(e error) (Prepared, error) { return Prepared{}, e }
 	if e := ctx.Err(); e != nil {
 		return bad(e)
@@ -94,7 +94,7 @@ func Prepare(ctx context.Context, p contracts.Protocol, chain contracts.ChainSto
 	if e != nil {
 		return bad(e)
 	}
-	ss, ok := chain.(contracts.StateStore)
+	ss, ok := chain.(core.StateStore)
 	if !ok {
 		return bad(fmt.Errorf("missing state store"))
 	}
@@ -132,7 +132,7 @@ func Prepare(ctx context.Context, p contracts.Protocol, chain contracts.ChainSto
 	if e != nil {
 		return bad(e)
 	}
-	out := Prepared{ID: b.ID(), Block: bytes.Clone(data), State: Copy(state), Root: root, Transactions: map[contracts.ID]Record{}, Receipts: map[contracts.ID]contracts.Receipt{}}
+	out := Prepared{ID: b.ID(), Block: bytes.Clone(data), State: Copy(state), Root: root, Transactions: map[core.ID]Record{}, Receipts: map[core.ID]core.Receipt{}}
 	for i, t := range txs {
 		if t == nil || t.ID() == "" {
 			return bad(fmt.Errorf("invalid transaction"))
@@ -159,7 +159,7 @@ func Prepare(ctx context.Context, p contracts.Protocol, chain contracts.ChainSto
 		receipt.Data = bytes.Clone(receipt.Data)
 		out.Receipts[receipt.TransactionID] = receipt
 	}
-	out.Result = contracts.ExecutionResult{Parent: r.Parent, BlockID: r.BlockID, StateRoot: r.StateRoot, Writes: Copy(r.Writes)}
+	out.Result = core.ExecutionResult{Parent: r.Parent, BlockID: r.BlockID, StateRoot: r.StateRoot, Writes: Copy(r.Writes)}
 	// Preserve protocol receipt ordering.
 	out.Result.Receipts = nil
 	for _, receipt := range r.Receipts {
@@ -171,7 +171,7 @@ func Prepare(ctx context.Context, p contracts.Protocol, chain contracts.ChainSto
 
 type Snapshot struct {
 	State      map[string][]byte
-	Commitment contracts.Commitment
+	Commitment core.Commitment
 }
 
 func (s *Snapshot) Get(ctx context.Context, key []byte) ([]byte, error) {
@@ -180,7 +180,7 @@ func (s *Snapshot) Get(ctx context.Context, key []byte) ([]byte, error) {
 	}
 	v, ok := s.State[string(key)]
 	if !ok {
-		return nil, contracts.ErrNotFound
+		return nil, core.ErrNotFound
 	}
 	return bytes.Clone(v), nil
 }
@@ -190,5 +190,5 @@ func (s *Snapshot) Entries(ctx context.Context) (map[string][]byte, error) {
 	}
 	return Copy(s.State), nil
 }
-func (s *Snapshot) Root() contracts.Commitment { return s.Commitment }
-func (s *Snapshot) Close() error               { return nil }
+func (s *Snapshot) Root() core.Commitment { return s.Commitment }
+func (s *Snapshot) Close() error          { return nil }

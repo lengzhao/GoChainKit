@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/protocol/kv/types"
 	"io"
 	"math"
@@ -18,18 +18,18 @@ type Config struct {
 type protocol struct{ network string }
 type transaction struct {
 	value types.Transaction
-	id    contracts.ID
+	id    core.ID
 }
 
-func (t *transaction) ID() contracts.ID { return t.id }
+func (t *transaction) ID() core.ID { return t.id }
 
 type block struct {
 	value types.Block
-	id    contracts.ID
+	id    core.ID
 }
 
-func (b *block) ID() contracts.ID { return b.id }
-func WrapTransaction(t types.Transaction) (contracts.Transaction, error) {
+func (b *block) ID() core.ID { return b.id }
+func WrapTransaction(t types.Transaction) (core.Transaction, error) {
 	if e := t.Verify(t.ChainID); e != nil {
 		return nil, e
 	}
@@ -37,16 +37,16 @@ func WrapTransaction(t types.Transaction) (contracts.Transaction, error) {
 	if e != nil {
 		return nil, e
 	}
-	return &transaction{t.Clone(), contracts.ID(string(id[:]))}, nil
+	return &transaction{t.Clone(), core.ID(string(id[:]))}, nil
 }
-func UnwrapTransaction(t contracts.Transaction) (types.Transaction, error) {
+func UnwrapTransaction(t core.Transaction) (types.Transaction, error) {
 	v, ok := t.(*transaction)
 	if !ok || v == nil {
 		return types.Transaction{}, fmt.Errorf("not a kv transaction")
 	}
 	return v.value.Clone(), nil
 }
-func WrapBlock(b types.Block) (contracts.Block, error) {
+func WrapBlock(b types.Block) (core.Block, error) {
 	id, e := b.ID()
 	if e != nil {
 		return nil, e
@@ -56,23 +56,23 @@ func WrapBlock(b types.Block) (contracts.Block, error) {
 			return nil, e
 		}
 	}
-	return &block{b.Clone(), contracts.ID(string(id[:]))}, nil
+	return &block{b.Clone(), core.ID(string(id[:]))}, nil
 }
-func UnwrapBlock(b contracts.Block) (types.Block, error) {
+func UnwrapBlock(b core.Block) (types.Block, error) {
 	v, ok := b.(*block)
 	if !ok || v == nil {
 		return types.Block{}, fmt.Errorf("not a kv block")
 	}
 	return v.value.Clone(), nil
 }
-func New(c Config) (contracts.Protocol, error) {
+func New(c Config) (core.Protocol, error) {
 	if c.ChainID == "" || len(c.ChainID) > types.MaxChainIDBytes {
 		return nil, fmt.Errorf("invalid chainID")
 	}
 	return &protocol{c.ChainID}, nil
 }
-func (p *protocol) Protocol() contracts.ProtocolDescriptor {
-	return contracts.ProtocolDescriptor{Name: "kv", Version: "1", Network: p.network}
+func (p *protocol) Protocol() core.ProtocolDescriptor {
+	return core.ProtocolDescriptor{Name: "kv", Version: "1", Network: p.network}
 }
 func strict(data []byte, v any) error {
 	d := json.NewDecoder(bytes.NewReader(data))
@@ -86,7 +86,7 @@ func strict(data []byte, v any) error {
 	}
 	return nil
 }
-func (p *protocol) EncodeTransaction(t contracts.Transaction) ([]byte, error) {
+func (p *protocol) EncodeTransaction(t core.Transaction) ([]byte, error) {
 	v, e := UnwrapTransaction(t)
 	if e != nil {
 		return nil, e
@@ -96,7 +96,7 @@ func (p *protocol) EncodeTransaction(t contracts.Transaction) ([]byte, error) {
 	}
 	return json.Marshal(v)
 }
-func (p *protocol) DecodeTransaction(data []byte) (contracts.Transaction, error) {
+func (p *protocol) DecodeTransaction(data []byte) (core.Transaction, error) {
 	var t types.Transaction
 	if e := strict(data, &t); e != nil {
 		return nil, e
@@ -106,7 +106,7 @@ func (p *protocol) DecodeTransaction(data []byte) (contracts.Transaction, error)
 	}
 	return WrapTransaction(t)
 }
-func (p *protocol) ValidateTransaction(ctx context.Context, t contracts.Transaction) error {
+func (p *protocol) ValidateTransaction(ctx context.Context, t core.Transaction) error {
 	if e := ctx.Err(); e != nil {
 		return e
 	}
@@ -116,7 +116,7 @@ func (p *protocol) ValidateTransaction(ctx context.Context, t contracts.Transact
 	}
 	return v.Verify(p.network)
 }
-func (p *protocol) EncodeBlock(b contracts.Block) ([]byte, error) {
+func (p *protocol) EncodeBlock(b core.Block) ([]byte, error) {
 	v, e := UnwrapBlock(b)
 	if e != nil {
 		return nil, e
@@ -126,7 +126,7 @@ func (p *protocol) EncodeBlock(b contracts.Block) ([]byte, error) {
 	}
 	return json.Marshal(v)
 }
-func (p *protocol) DecodeBlock(data []byte) (contracts.Block, error) {
+func (p *protocol) DecodeBlock(data []byte) (core.Block, error) {
 	var b types.Block
 	if e := strict(data, &b); e != nil {
 		return nil, e
@@ -136,12 +136,12 @@ func (p *protocol) DecodeBlock(data []byte) (contracts.Block, error) {
 	}
 	return WrapBlock(b)
 }
-func (p *protocol) Transactions(b contracts.Block) ([]contracts.Transaction, error) {
+func (p *protocol) Transactions(b core.Block) ([]core.Transaction, error) {
 	v, e := UnwrapBlock(b)
 	if e != nil {
 		return nil, e
 	}
-	out := make([]contracts.Transaction, len(v.Transactions))
+	out := make([]core.Transaction, len(v.Transactions))
 	for i, t := range v.Transactions {
 		out[i], e = WrapTransaction(t)
 		if e != nil {
@@ -150,14 +150,14 @@ func (p *protocol) Transactions(b contracts.Block) ([]contracts.Transaction, err
 	}
 	return out, nil
 }
-func (p *protocol) StateCommitment(ctx context.Context, s map[string][]byte) (contracts.Commitment, error) {
+func (p *protocol) StateCommitment(ctx context.Context, s map[string][]byte) (core.Commitment, error) {
 	if e := ctx.Err(); e != nil {
 		return "", e
 	}
 	h := types.StateRoot(s)
-	return contracts.Commitment(string(h[:])), nil
+	return core.Commitment(string(h[:])), nil
 }
-func (p *protocol) Genesis(ctx context.Context) (contracts.Block, map[string][]byte, error) {
+func (p *protocol) Genesis(ctx context.Context) (core.Block, map[string][]byte, error) {
 	if e := ctx.Err(); e != nil {
 		return nil, nil, e
 	}
@@ -166,7 +166,7 @@ func (p *protocol) Genesis(ctx context.Context) (contracts.Block, map[string][]b
 	b, e := WrapBlock(types.Block{Header: types.BlockHeader{Version: 1, ChainID: p.network, TransactionRoot: r, StateRoot: types.StateRoot(s), ReceiptRoot: types.ReceiptRoot(nil)}})
 	return b, s, e
 }
-func (p *protocol) Draft(ctx context.Context, parent contracts.Block, txs []contracts.Transaction) (contracts.Block, error) {
+func (p *protocol) Draft(ctx context.Context, parent core.Block, txs []core.Transaction) (core.Block, error) {
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
@@ -192,7 +192,7 @@ func (p *protocol) Draft(ctx context.Context, parent contracts.Block, txs []cont
 	}
 	return WrapBlock(b)
 }
-func receiptRoot(rs []contracts.Receipt) (types.Hash, error) {
+func receiptRoot(rs []core.Receipt) (types.Hash, error) {
 	out := make([]types.Receipt, len(rs))
 	for i, r := range rs {
 		if len(r.TransactionID) != 32 || !bytes.Equal(r.Data, []byte{1}) {
@@ -203,7 +203,7 @@ func receiptRoot(rs []contracts.Receipt) (types.Hash, error) {
 	}
 	return types.ReceiptRoot(out), nil
 }
-func (p *protocol) Finalize(ctx context.Context, d contracts.Block, r contracts.ExecutionResult) (contracts.Block, error) {
+func (p *protocol) Finalize(ctx context.Context, d core.Block, r core.ExecutionResult) (core.Block, error) {
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
@@ -211,7 +211,7 @@ func (p *protocol) Finalize(ctx context.Context, d contracts.Block, r contracts.
 	if e != nil {
 		return nil, e
 	}
-	if v.Header.ChainID != p.network || r.Parent != contracts.ID(string(v.Header.Parent[:])) || r.BlockID != d.ID() || len(r.StateRoot) != 32 {
+	if v.Header.ChainID != p.network || r.Parent != core.ID(string(v.Header.Parent[:])) || r.BlockID != d.ID() || len(r.StateRoot) != 32 {
 		return nil, fmt.Errorf("execution binding mismatch")
 	}
 	if len(r.Receipts) != len(v.Transactions) {
@@ -219,7 +219,7 @@ func (p *protocol) Finalize(ctx context.Context, d contracts.Block, r contracts.
 	}
 	for i, t := range v.Transactions {
 		id, _ := t.ID()
-		if r.Receipts[i].TransactionID != contracts.ID(string(id[:])) {
+		if r.Receipts[i].TransactionID != core.ID(string(id[:])) {
 			return nil, fmt.Errorf("receipt transaction mismatch")
 		}
 	}
@@ -230,7 +230,7 @@ func (p *protocol) Finalize(ctx context.Context, d contracts.Block, r contracts.
 	}
 	return WrapBlock(v)
 }
-func (p *protocol) ValidateBlock(ctx context.Context, _ contracts.ChainStore, parent, b contracts.Block, r contracts.ExecutionResult) error {
+func (p *protocol) ValidateBlock(ctx context.Context, _ core.ChainStore, parent, b core.Block, r core.ExecutionResult) error {
 	pv, e := UnwrapBlock(parent)
 	if e != nil {
 		return e
@@ -239,7 +239,7 @@ func (p *protocol) ValidateBlock(ctx context.Context, _ contracts.ChainStore, pa
 	if e != nil {
 		return e
 	}
-	if pv.Header.Height == math.MaxUint64 || bv.Header.Height != pv.Header.Height+1 || bv.Header.Version != 1 || bv.Header.ChainID != p.network || pv.Header.ChainID != p.network || contracts.ID(string(bv.Header.Parent[:])) != parent.ID() {
+	if pv.Header.Height == math.MaxUint64 || bv.Header.Height != pv.Header.Height+1 || bv.Header.Version != 1 || bv.Header.ChainID != p.network || pv.Header.ChainID != p.network || core.ID(string(bv.Header.Parent[:])) != parent.ID() {
 		return fmt.Errorf("invalid ancestry")
 	}
 	transactions, e := p.Transactions(b)

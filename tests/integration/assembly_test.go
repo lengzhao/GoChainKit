@@ -3,7 +3,7 @@ package integration
 import (
 	"context"
 	"crypto/ed25519"
-	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
 	_ "github.com/lengzhao/GoChainKit/plugins/builder/basic"
 	_ "github.com/lengzhao/GoChainKit/plugins/executor/kv"
@@ -22,10 +22,10 @@ import (
 )
 
 func init() {
-	pluginkit.Register("protocol/integration-flex", func() (contracts.Protocol, error) { return testprotocol.New("flex"), nil })
+	pluginkit.Register("protocol/integration-flex", func() (core.Protocol, error) { return testprotocol.New("flex"), nil })
 	pluginkit.Register("executor/integration-flex", func(_ struct{}, d struct {
-		Protocol contracts.Protocol `json:"protocol"`
-	}) (contracts.Executor, error) {
+		Protocol core.Protocol `json:"protocol"`
+	}) (core.Executor, error) {
 		return testprotocol.Executor{P: d.Protocol}, nil
 	})
 }
@@ -39,7 +39,7 @@ func productionGraph(store config.PluginUse, custom bool) map[string]any {
 	store.Deps = map[string]any{"protocol": "protocol"}
 	return map[string]any{"protocol": protocol, "store": store, "pool": config.PluginUse{Use: "mempool/memory", Config: map[string]any{"maxTransactions": 10, "maxBytes": 16384}, Deps: map[string]any{"protocol": "protocol"}}, "executor": executor, "builder": config.PluginUse{Use: "builder/basic", Config: map[string]any{"maxTransactionBytes": 16384}, Deps: map[string]any{"protocol": "protocol", "pool": "pool", "chain": "store", "states": "store", "executor": "executor"}}, "host": config.PluginUse{Use: "node/coordinator", Deps: map[string]any{"protocol": "protocol", "builder": "builder", "chain": "store", "states": "store", "executor": "executor", "committer": "store", "pool": "pool"}}}
 }
-func defaultTransaction(t *testing.T, nonce uint64) contracts.Transaction {
+func defaultTransaction(t *testing.T, nonce uint64) core.Transaction {
 	t.Helper()
 	raw := types.Transaction{ChainID: "dev", Nonce: nonce, Key: []byte("hello"), Value: []byte("world")}
 	if err := raw.Sign(ed25519.NewKeyFromSeed(make([]byte, 32))); err != nil {
@@ -54,7 +54,7 @@ func defaultTransaction(t *testing.T, nonce uint64) contracts.Transaction {
 func TestProductionGraph(t *testing.T) {
 	ctx := context.Background()
 	graph := productionGraph(config.PluginUse{Use: "storage/memory"}, false)
-	host, result, err := build.Build[contracts.ConsensusHost](ctx, graph, "host")
+	host, result, err := build.Build[core.ConsensusHost](ctx, graph, "host")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,14 +90,14 @@ func TestPersistentProductionGraph(t *testing.T) {
 			ctx := context.Background()
 			path := filepath.Join(t.TempDir(), "chain.db")
 			graph := productionGraph(config.PluginUse{Use: "storage/bolt", Config: map[string]any{"path": path}}, custom)
-			var confirmed contracts.ID
-			var previous contracts.ID
+			var confirmed core.ID
+			var previous core.ID
 			for phase := 0; phase < 2; phase++ {
-				host, result, err := build.Build[contracts.ConsensusHost](ctx, graph, "host")
+				host, result, err := build.Build[core.ConsensusHost](ctx, graph, "host")
 				if err != nil {
 					t.Fatal(err)
 				}
-				lifecycle, err := build.RequireByID[contracts.Lifecycle](result, "store", "store")
+				lifecycle, err := build.RequireByID[core.Lifecycle](result, "store", "store")
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -105,15 +105,15 @@ func TestPersistentProductionGraph(t *testing.T) {
 					t.Fatal(err)
 				}
 				t.Cleanup(func() { _ = lifecycle.Stop(context.Background()) })
-				pool, err := build.RequireByID[contracts.Mempool](result, "pool", "pool")
+				pool, err := build.RequireByID[core.Mempool](result, "pool", "pool")
 				if err != nil {
 					t.Fatal(err)
 				}
-				transactions, err := build.RequireByID[contracts.TransactionStore](result, "store", "store")
+				transactions, err := build.RequireByID[core.TransactionStore](result, "store", "store")
 				if err != nil {
 					t.Fatal(err)
 				}
-				chain, err := build.RequireByID[contracts.ChainStore](result, "store", "store")
+				chain, err := build.RequireByID[core.ChainStore](result, "store", "store")
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -127,7 +127,7 @@ func TestPersistentProductionGraph(t *testing.T) {
 						t.Fatal("head not recovered", err)
 					}
 				}
-				var tx contracts.Transaction
+				var tx core.Transaction
 				if custom {
 					tx = testprotocol.Tx{Label: string(rune('a' + phase)), Body: []byte{0, 0xff, byte(phase)}}
 					if len(tx.ID()) == 32 {
@@ -156,7 +156,7 @@ func TestPersistentProductionGraph(t *testing.T) {
 					if frame.Revision != uint64(phase+1) || len(frame.OtherLinks) != 2 || len(frame.Commitment) != 64 {
 						t.Fatal("custom layout was constrained")
 					}
-					states, err := build.RequireByID[contracts.StateStore](result, "store", "store")
+					states, err := build.RequireByID[core.StateStore](result, "store", "store")
 					if err != nil {
 						t.Fatal(err)
 					}

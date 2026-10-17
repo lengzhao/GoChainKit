@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/gob"
 	"fmt"
-	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/runtime/ledger"
 	"github.com/lengzhao/pluginkit"
 	db "go.etcd.io/bbolt"
@@ -22,13 +22,13 @@ type Config struct {
 	Path string `json:"path"`
 }
 type Deps struct {
-	Protocol contracts.Protocol `json:"protocol"`
+	Protocol core.Protocol `json:"protocol"`
 }
-type TransactionRecord = contracts.ConfirmedTransaction
+type TransactionRecord = core.ConfirmedTransaction
 type Store struct {
 	mu          sync.RWMutex
 	cfg         Config
-	p           contracts.Protocol
+	p           core.Protocol
 	db          *db.DB
 	stopped     bool
 	starting    bool
@@ -47,7 +47,7 @@ func New(c Config, d Deps) (*Store, error) {
 	}
 	return &Store{cfg: c, p: d.Protocol}, nil
 }
-func (s *Store) Protocol() contracts.ProtocolDescriptor { return s.p.Protocol() }
+func (s *Store) Protocol() core.ProtocolDescriptor { return s.p.Protocol() }
 func encode(v any) ([]byte, error) {
 	var b bytes.Buffer
 	e := gob.NewEncoder(&b).Encode(v)
@@ -67,7 +67,7 @@ func get(tx *db.Tx, b string, k []byte, v any) error {
 	}
 	data := bucket.Get(k)
 	if data == nil {
-		return contracts.ErrNotFound
+		return core.ErrNotFound
 	}
 	return gob.NewDecoder(bytes.NewReader(data)).Decode(v)
 }
@@ -75,7 +75,7 @@ func (s *Store) Start(ctx context.Context) (err error) {
 	s.mu.Lock()
 	if s.stopped {
 		s.mu.Unlock()
-		return contracts.ErrClosed
+		return core.ErrClosed
 	}
 	if s.db != nil || s.starting {
 		s.mu.Unlock()
@@ -91,7 +91,7 @@ func (s *Store) Start(ctx context.Context) (err error) {
 	defer func() {
 		s.mu.Lock()
 		if err == nil && (s.stopped || ctx.Err() != nil) {
-			err = contracts.ErrClosed
+			err = core.ErrClosed
 		}
 		if err == nil {
 			s.db = database
@@ -125,15 +125,15 @@ func (s *Store) Start(ctx context.Context) (err error) {
 			if !bytes.Equal(meta.Get([]byte("format")), []byte("2")) {
 				return fmt.Errorf("unsupported storage format")
 			}
-			var stored contracts.ProtocolDescriptor
+			var stored core.ProtocolDescriptor
 			if e := get(tx, "meta", []byte("protocol"), &stored); e != nil {
 				return e
 			}
 			if stored != desc {
 				return fmt.Errorf("database protocol mismatch")
 			}
-			var genesisID contracts.ID
-			var genesisRoot contracts.Commitment
+			var genesisID core.ID
+			var genesisRoot core.Commitment
 			var genesisBytes []byte
 			if e := get(tx, "meta", []byte("genesisID"), &genesisID); e != nil {
 				return e
@@ -197,10 +197,10 @@ func (s *Store) Start(ctx context.Context) (err error) {
 		}
 	}
 	if e == nil && head != g.ID {
-		var result contracts.ExecutionResult
+		var result core.ExecutionResult
 		e = reader.view(ctx, func(tx *db.Tx) error { return get(tx, "results", []byte(head), &result) })
 		if e == nil {
-			var parent, block contracts.Block
+			var parent, block core.Block
 			parent, e = reader.Block(ctx, result.Parent)
 			if e == nil {
 				block, e = reader.Block(ctx, head)
@@ -209,7 +209,7 @@ func (s *Store) Start(ctx context.Context) (err error) {
 				e = s.p.ValidateBlock(ctx, reader, parent, block, result)
 			}
 			if e == nil {
-				var snap contracts.StateReader
+				var snap core.StateReader
 				snap, e = reader.Snapshot(ctx, head)
 				if e == nil {
 					if snap.Root() != result.StateRoot {
@@ -254,16 +254,16 @@ func (s *Store) view(ctx context.Context, fn func(*db.Tx) error) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.db == nil {
-		return contracts.ErrClosed
+		return core.ErrClosed
 	}
 	return s.db.View(fn)
 }
-func (s *Store) Head(ctx context.Context) (contracts.ID, error) {
-	var h contracts.ID
+func (s *Store) Head(ctx context.Context) (core.ID, error) {
+	var h core.ID
 	e := s.view(ctx, func(tx *db.Tx) error { return get(tx, "meta", []byte("head"), &h) })
 	return h, e
 }
-func (s *Store) Block(ctx context.Context, id contracts.ID) (contracts.Block, error) {
+func (s *Store) Block(ctx context.Context, id core.ID) (core.Block, error) {
 	var data []byte
 	e := s.view(ctx, func(tx *db.Tx) error { return get(tx, "blocks", []byte(id), &data) })
 	if e != nil {
@@ -271,12 +271,12 @@ func (s *Store) Block(ctx context.Context, id contracts.ID) (contracts.Block, er
 	}
 	return ledger.DecodeBlock(s.p, data, id)
 }
-func (s *Store) Receipt(ctx context.Context, id contracts.ID) (contracts.Receipt, error) {
-	var r contracts.Receipt
+func (s *Store) Receipt(ctx context.Context, id core.ID) (core.Receipt, error) {
+	var r core.Receipt
 	e := s.view(ctx, func(tx *db.Tx) error { return get(tx, "receipts", []byte(id), &r) })
 	return r, e
 }
-func (s *Store) Transaction(ctx context.Context, id contracts.ID) (TransactionRecord, error) {
+func (s *Store) Transaction(ctx context.Context, id core.ID) (TransactionRecord, error) {
 	var r ledger.Record
 	e := s.view(ctx, func(tx *db.Tx) error { return get(tx, "transactions", []byte(id), &r) })
 	if e != nil {
@@ -285,9 +285,9 @@ func (s *Store) Transaction(ctx context.Context, id contracts.ID) (TransactionRe
 	t, e := ledger.DecodeTransaction(s.p, r.Data, id)
 	return TransactionRecord{Transaction: t, BlockID: r.BlockID, Index: r.Index}, e
 }
-func (s *Store) Snapshot(ctx context.Context, id contracts.ID) (contracts.StateReader, error) {
+func (s *Store) Snapshot(ctx context.Context, id core.ID) (core.StateReader, error) {
 	var state map[string][]byte
-	var root contracts.Commitment
+	var root core.Commitment
 	e := s.view(ctx, func(tx *db.Tx) error {
 		if e := get(tx, "states", []byte(id), &state); e != nil {
 			return e
@@ -306,7 +306,7 @@ func (s *Store) Snapshot(ctx context.Context, id contracts.ID) (contracts.StateR
 	}
 	return &ledger.Snapshot{State: state, Commitment: root}, nil
 }
-func (s *Store) Commit(ctx context.Context, parent contracts.ID, b contracts.Block, r contracts.ExecutionResult) error {
+func (s *Store) Commit(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) error {
 	if b == nil {
 		return fmt.Errorf("nil block")
 	}
@@ -320,10 +320,10 @@ func (s *Store) Commit(ctx context.Context, parent contracts.ID, b contracts.Blo
 		return e
 	}
 	if exists {
-		return contracts.ErrAlreadyCommitted
+		return core.ErrAlreadyCommitted
 	}
 	if parent != head {
-		return contracts.ErrConflict
+		return core.ErrConflict
 	}
 	v, e := ledger.Prepare(ctx, s.p, s, parent, b, r)
 	if e != nil {
@@ -332,28 +332,28 @@ func (s *Store) Commit(ctx context.Context, parent contracts.ID, b contracts.Blo
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if s.db == nil {
-		return contracts.ErrClosed
+		return core.ErrClosed
 	}
 	var callbackErr error
 	e = s.db.Update(func(tx *db.Tx) error { callbackErr = s.commit(ctx, tx, parent, v); return callbackErr })
 	if e != nil && callbackErr == nil {
-		return fmt.Errorf("%w: %v", contracts.ErrCommitUnknown, e)
+		return fmt.Errorf("%w: %v", core.ErrCommitUnknown, e)
 	}
 	return e
 }
-func (s *Store) commit(ctx context.Context, tx *db.Tx, parent contracts.ID, v ledger.Prepared) error {
+func (s *Store) commit(ctx context.Context, tx *db.Tx, parent core.ID, v ledger.Prepared) error {
 	if e := ctx.Err(); e != nil {
 		return e
 	}
 	if tx.Bucket([]byte("blocks")).Get([]byte(v.ID)) != nil {
-		return contracts.ErrAlreadyCommitted
+		return core.ErrAlreadyCommitted
 	}
-	var head contracts.ID
+	var head core.ID
 	if e := get(tx, "meta", []byte("head"), &head); e != nil {
 		return e
 	}
 	if head != parent {
-		return contracts.ErrConflict
+		return core.ErrConflict
 	}
 	for id := range v.Transactions {
 		if tx.Bucket([]byte("transactions")).Get([]byte(id)) != nil {

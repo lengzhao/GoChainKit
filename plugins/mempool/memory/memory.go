@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/core"
 	"sync"
 )
 
@@ -14,40 +14,40 @@ type Config struct {
 	MaxBytes        int `json:"maxBytes"`
 }
 type Deps struct {
-	Protocol contracts.Protocol `json:"protocol"`
+	Protocol core.Protocol `json:"protocol"`
 }
 type entry struct {
-	id   contracts.ID
+	id   core.ID
 	data []byte
 }
 type pool struct {
 	mu       sync.Mutex
 	cfg      Config
-	protocol contracts.Protocol
+	protocol core.Protocol
 	entries  []entry
-	ids      map[contracts.ID]bool
+	ids      map[core.ID]bool
 	bytes    int
 }
 
-func New(cfg Config, deps Deps) (contracts.Mempool, error) {
+func New(cfg Config, deps Deps) (core.Mempool, error) {
 	if deps.Protocol == nil || cfg.MaxTransactions <= 0 || cfg.MaxBytes <= 0 {
 		return nil, fmt.Errorf("mempool/memory: protocol and positive limits required")
 	}
 	if err := deps.Protocol.Protocol().Validate(); err != nil {
 		return nil, err
 	}
-	return &pool{cfg: cfg, protocol: deps.Protocol, ids: make(map[contracts.ID]bool)}, nil
+	return &pool{cfg: cfg, protocol: deps.Protocol, ids: make(map[core.ID]bool)}, nil
 }
-func (p *pool) Protocol() contracts.ProtocolDescriptor { return p.protocol.Protocol() }
-func (p *pool) Add(ctx context.Context, t contracts.Transaction) error {
+func (p *pool) Protocol() core.ProtocolDescriptor { return p.protocol.Protocol() }
+func (p *pool) Add(ctx context.Context, t core.Transaction) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if t == nil || t.ID() == "" {
-		return contracts.ErrInvalidTransaction
+		return core.ErrInvalidTransaction
 	}
 	if err := p.protocol.ValidateTransaction(ctx, t); err != nil {
-		return fmt.Errorf("%w: %v", contracts.ErrInvalidTransaction, err)
+		return fmt.Errorf("%w: %v", core.ErrInvalidTransaction, err)
 	}
 	data, err := p.protocol.EncodeTransaction(t)
 	if err != nil {
@@ -71,14 +71,14 @@ func (p *pool) Add(ctx context.Context, t contracts.Transaction) error {
 		return nil
 	}
 	if len(p.entries) >= p.cfg.MaxTransactions || len(data) > p.cfg.MaxBytes-p.bytes {
-		return contracts.ErrFull
+		return core.ErrFull
 	}
 	p.entries = append(p.entries, entry{id, data})
 	p.ids[id] = true
 	p.bytes += len(data)
 	return nil
 }
-func (p *pool) Select(ctx context.Context, budget int) ([]contracts.Transaction, error) {
+func (p *pool) Select(ctx context.Context, budget int) ([]core.Transaction, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func (p *pool) Select(ctx context.Context, budget int) ([]contracts.Transaction,
 		}
 	}
 	p.mu.Unlock()
-	var out []contracts.Transaction
+	var out []core.Transaction
 	for _, data := range selected {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -107,7 +107,7 @@ func (p *pool) Select(ctx context.Context, budget int) ([]contracts.Transaction,
 	}
 	return out, nil
 }
-func (p *pool) Remove(ctx context.Context, ids []contracts.ID) error {
+func (p *pool) Remove(ctx context.Context, ids []core.ID) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -116,7 +116,7 @@ func (p *pool) Remove(ctx context.Context, ids []contracts.ID) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	remove := make(map[contracts.ID]bool, len(ids))
+	remove := make(map[core.ID]bool, len(ids))
 	for _, id := range ids {
 		remove[id] = true
 	}

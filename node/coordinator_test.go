@@ -3,7 +3,7 @@ package node
 import (
 	"context"
 	"errors"
-	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
 	builder "github.com/lengzhao/GoChainKit/plugins/builder/basic"
 	pool "github.com/lengzhao/GoChainKit/plugins/mempool/memory"
@@ -12,11 +12,11 @@ import (
 )
 
 type failingCommitter struct {
-	contracts.Committer
+	core.Committer
 	err error
 }
 
-func (f *failingCommitter) Commit(ctx context.Context, parent contracts.ID, b contracts.Block, r contracts.ExecutionResult) error {
+func (f *failingCommitter) Commit(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) error {
 	if f.err != nil {
 		return f.err
 	}
@@ -72,7 +72,7 @@ func TestCommitOrderingAndProtocolValidation(t *testing.T) {
 	if len(left) != 0 {
 		t.Fatal("not removed")
 	}
-	if err := h.Commit(ctx, block); !errors.Is(err, contracts.ErrConflict) {
+	if err := h.Commit(ctx, block); !errors.Is(err, core.ErrConflict) {
 		t.Fatal("accepted stale block", err)
 	}
 }

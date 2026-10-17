@@ -3,7 +3,7 @@ package memory
 import (
 	"context"
 	"errors"
-	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/core"
 	protocol "github.com/lengzhao/GoChainKit/protocol/kv"
 	"testing"
 )
@@ -23,7 +23,7 @@ func TestCommitAndIsolation(t *testing.T) {
 	}
 	writes := map[string][]byte{string([]byte{255, 0, 128}): {255, 0, 128}}
 	root, _ := p.StateCommitment(ctx, writes)
-	r := contracts.ExecutionResult{Parent: head, BlockID: draft.ID(), Writes: writes, StateRoot: root}
+	r := core.ExecutionResult{Parent: head, BlockID: draft.ID(), Writes: writes, StateRoot: root}
 	b, e := p.Finalize(ctx, draft, r)
 	if e != nil {
 		t.Fatal(e)
@@ -38,7 +38,7 @@ func TestCommitAndIsolation(t *testing.T) {
 	if e != nil || v[0] != 255 {
 		t.Fatal("snapshot alias", e)
 	}
-	if e = s.Commit(ctx, head, b, r); !errors.Is(e, contracts.ErrAlreadyCommitted) {
+	if e = s.Commit(ctx, head, b, r); !errors.Is(e, core.ErrAlreadyCommitted) {
 		t.Fatal(e)
 	}
 }

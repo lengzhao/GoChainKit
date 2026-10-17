@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/core"
 	protocol "github.com/lengzhao/GoChainKit/protocol/kv"
 	"github.com/lengzhao/GoChainKit/protocol/kv/types"
 	"github.com/lengzhao/pluginkit"
@@ -16,21 +16,21 @@ type Config struct {
 	ChainID string `json:"chainID"`
 }
 type Deps struct {
-	Protocol contracts.Protocol `json:"protocol"`
+	Protocol core.Protocol `json:"protocol"`
 }
 type executor struct {
 	chainID  string
-	protocol contracts.Protocol
+	protocol core.Protocol
 }
 
-func (e *executor) Protocol() contracts.ProtocolDescriptor { return e.protocol.Protocol() }
+func (e *executor) Protocol() core.ProtocolDescriptor { return e.protocol.Protocol() }
 
 func init() { pluginkit.Register("executor/kv", New) }
-func New(cfg Config, deps Deps) (contracts.Executor, error) {
+func New(cfg Config, deps Deps) (core.Executor, error) {
 	if cfg.ChainID == "" || len(cfg.ChainID) > types.MaxChainIDBytes {
 		return nil, fmt.Errorf("executor/kv: chainID required")
 	}
-	if deps.Protocol == nil || deps.Protocol.Protocol() != (contracts.ProtocolDescriptor{Name: "kv", Version: "1", Network: cfg.ChainID}) {
+	if deps.Protocol == nil || deps.Protocol.Protocol() != (core.ProtocolDescriptor{Name: "kv", Version: "1", Network: cfg.ChainID}) {
 		return nil, fmt.Errorf("incompatible protocol")
 	}
 	return &executor{cfg.ChainID, deps.Protocol}, nil
@@ -45,8 +45,8 @@ func ValueKey(address types.Address, key []byte) []byte {
 	return out
 }
 func nonceKey(address types.Address) string { return string(append([]byte{0}, address[:]...)) }
-func (e *executor) Execute(ctx context.Context, parent contracts.StateReader, candidate contracts.Block) (contracts.ExecutionResult, error) {
-	fail := func(err error) (contracts.ExecutionResult, error) { return contracts.ExecutionResult{}, err }
+func (e *executor) Execute(ctx context.Context, parent core.StateReader, candidate core.Block) (core.ExecutionResult, error) {
+	fail := func(err error) (core.ExecutionResult, error) { return core.ExecutionResult{}, err }
 	b, unwrapErr := protocol.UnwrapBlock(candidate)
 	if unwrapErr != nil {
 		return fail(unwrapErr)
@@ -62,13 +62,13 @@ func (e *executor) Execute(ctx context.Context, parent contracts.StateReader, ca
 		state = make(map[string][]byte)
 	}
 	writes := make(map[string][]byte)
-	receipts := make([]contracts.Receipt, 0, len(b.Transactions))
+	receipts := make([]core.Receipt, 0, len(b.Transactions))
 	for _, tx := range b.Transactions {
 		if err := ctx.Err(); err != nil {
 			return fail(err)
 		}
 		if err := tx.Verify(e.chainID); err != nil {
-			return fail(fmt.Errorf("%w: %v", contracts.ErrInvalidTransaction, err))
+			return fail(fmt.Errorf("%w: %v", core.ErrInvalidTransaction, err))
 		}
 		nk := nonceKey(tx.Sender())
 		stored := state[nk]
@@ -80,7 +80,7 @@ func (e *executor) Execute(ctx context.Context, parent contracts.StateReader, ca
 			previous = binary.BigEndian.Uint64(stored)
 		}
 		if previous == ^uint64(0) || tx.Nonce != previous+1 {
-			return fail(fmt.Errorf("%w: nonce is not consecutive", contracts.ErrInvalidTransaction))
+			return fail(fmt.Errorf("%w: nonce is not consecutive", core.ErrInvalidTransaction))
 		}
 		encoded := make([]byte, 8)
 		binary.BigEndian.PutUint64(encoded, tx.Nonce)
@@ -93,7 +93,7 @@ func (e *executor) Execute(ctx context.Context, parent contracts.StateReader, ca
 		if err != nil {
 			return fail(err)
 		}
-		receipts = append(receipts, contracts.Receipt{TransactionID: contracts.ID(string(id[:])), Data: []byte{1}})
+		receipts = append(receipts, core.Receipt{TransactionID: core.ID(string(id[:])), Data: []byte{1}})
 	}
 	if err := ctx.Err(); err != nil {
 		return fail(err)
@@ -102,5 +102,5 @@ func (e *executor) Execute(ctx context.Context, parent contracts.StateReader, ca
 	if err != nil {
 		return fail(err)
 	}
-	return contracts.ExecutionResult{Parent: contracts.ID(string(b.Header.Parent[:])), BlockID: candidate.ID(), Writes: writes, Receipts: receipts, StateRoot: root}, nil
+	return core.ExecutionResult{Parent: core.ID(string(b.Header.Parent[:])), BlockID: candidate.ID(), Writes: writes, Receipts: receipts, StateRoot: root}, nil
 }

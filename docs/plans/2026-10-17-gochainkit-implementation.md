@@ -41,7 +41,7 @@
 
 ## Task 2 模块接口与运行协议
 
-创建 `core/contracts/{lifecycle,transport,mempool,consensus,builder,executor,storage,api,crypto}.go` 和 `core/contracts/doc.go`。
+创建 `core/{lifecycle,transport,mempool,consensus,builder,executor,storage,api,crypto}.go` 和 `core/doc.go`。
 
 1. 定义每个模块的输入、输出、错误类别、资源归属和并发约束，不在接口包依赖 PluginKit。
 2. Consensus 采用受控驱动：Start 接收提议构建、验证及最终提交的宿主能力，Stop 终止其后台任务；Transport 的入站消息由协调器显式路由，不建立隐式反向依赖。

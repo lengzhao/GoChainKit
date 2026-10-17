@@ -3,7 +3,7 @@ package single
 import (
 	"context"
 	"errors"
-	"github.com/lengzhao/GoChainKit/core/contracts"
+	"github.com/lengzhao/GoChainKit/core"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -16,12 +16,12 @@ type host struct {
 	done      chan struct{}
 }
 
-func (h *host) Propose(context.Context) (contracts.Block, error) {
+func (h *host) Propose(context.Context) (core.Block, error) {
 	h.proposed.Add(1)
 	return testBlock{}, nil
 }
-func (h *host) Validate(context.Context, contracts.Block) error { return h.fail }
-func (h *host) Commit(context.Context, contracts.Block) error {
+func (h *host) Validate(context.Context, core.Block) error { return h.fail }
+func (h *host) Commit(context.Context, core.Block) error {
 	if h.committed.Add(1) == 2 {
 		close(h.done)
 	}
@@ -71,4 +71,4 @@ func TestValidationFailureStopsWithoutCommit(t *testing.T) {
 
 type testBlock struct{}
 
-func (testBlock) ID() contracts.ID { return "test" }
+func (testBlock) ID() core.ID { return "test" }
