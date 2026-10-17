@@ -29,3 +29,20 @@ type Engine interface {
 	Genesis(context.Context) (map[string][]byte, error)
 	Execute(context.Context, core.StateReader, []core.Transaction) (Transition, error)
 }
+
+// ExecutionContext exposes block/history context without prescribing height,
+// balance, validator, fee or parent topology fields on every model. Parent is
+// the execution baseline; additional ancestry remains protocol-defined.
+// Applications may supply additional typed capabilities on the concrete value.
+type ExecutionContext interface {
+	Parent() core.Block
+	Candidate() core.Block
+	History() core.ChainStore
+}
+
+// ContextualEngine is optional for time locks, maturity or historical rules.
+// Generic assemblers preserve Engine compatibility and use this when available.
+type ContextualEngine interface {
+	Engine
+	ExecuteInContext(context.Context, core.StateReader, []core.Transaction, ExecutionContext) (Transition, error)
+}
