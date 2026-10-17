@@ -11,7 +11,7 @@ import (
 func TestCommitAndIsolation(t *testing.T) {
 	ctx := context.Background()
 	p, _ := protocol.New(protocol.Config{ChainID: "dev"})
-	s, e := NewMemory(MemoryConfig{}, Deps{p})
+	s, e := NewMemory(MemoryConfig{}, Deps{Protocol: p})
 	if e != nil {
 		t.Fatal(e)
 	}

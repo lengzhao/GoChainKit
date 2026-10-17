@@ -222,7 +222,7 @@ func TestOldFormatRejected(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Stop(context.Background())
-	next, _ := NewBolt(BoltConfig{Path: path}, Deps{mustProtocol("dev")})
+	next, _ := NewBolt(BoltConfig{Path: path}, Deps{Protocol: mustProtocol("dev")})
 	if err := next.Start(context.Background()); err == nil {
 		next.Stop(context.Background())
 		t.Fatal("accepted old format")

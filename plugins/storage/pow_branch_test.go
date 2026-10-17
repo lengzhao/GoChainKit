@@ -58,13 +58,13 @@ func TestPoWBranchStateAndDurability(t *testing.T) {
 			var s core.BranchLedger
 			path := filepath.Join(t.TempDir(), "pow.db")
 			if kind == "memory" {
-				v, e := NewMemory(MemoryConfig{}, Deps{p})
+				v, e := NewMemory(MemoryConfig{}, Deps{Protocol: p})
 				if e != nil {
 					t.Fatal(e)
 				}
 				s = v
 			} else {
-				v, e := NewBolt(BoltConfig{path}, Deps{p})
+				v, e := NewBolt(BoltConfig{path}, Deps{Protocol: p})
 				if e != nil {
 					t.Fatal(e)
 				}
@@ -98,7 +98,7 @@ func TestPoWBranchStateAndDurability(t *testing.T) {
 			snap.Close()
 			if kind == "bolt" {
 				s.(*BoltStore).Stop(ctx)
-				v, _ := NewBolt(BoltConfig{path}, Deps{p})
+				v, _ := NewBolt(BoltConfig{path}, Deps{Protocol: p})
 				if e := v.Start(ctx); e != nil {
 					t.Fatal(e)
 				}
@@ -114,7 +114,7 @@ func TestBranchRollbackAndCorruptSideRecovery(t *testing.T) {
 	ctx := context.Background()
 	p, _ := pow.New(pow.Config{ChainID: "rollback"})
 	path := filepath.Join(t.TempDir(), "pow.db")
-	s, _ := NewBolt(BoltConfig{path}, Deps{p})
+	s, _ := NewBolt(BoltConfig{path}, Deps{Protocol: p})
 	if e := s.Start(ctx); e != nil {
 		t.Fatal(e)
 	}
@@ -139,15 +139,46 @@ func TestBranchRollbackAndCorruptSideRecovery(t *testing.T) {
 		if e := get(tx, "branches", []byte(b.ID()), &n); e != nil {
 			return e
 		}
-		n.Total = "999"
+		n.Score = []byte("999")
 		return put(tx, "branches", []byte(b.ID()), n)
 	}); e != nil {
 		t.Fatal(e)
 	}
 	s.Stop(ctx)
-	next, _ := NewBolt(BoltConfig{path}, Deps{p})
+	next, _ := NewBolt(BoltConfig{path}, Deps{Protocol: p})
 	if e := next.Start(ctx); e == nil {
 		next.Stop(ctx)
 		t.Fatal("accepted corrupt side branch")
+	}
+}
+
+// A legacy branch database has no policy identity and must never be silently
+// treated as a linear database by hiding the protocol's optional capabilities.
+type ledgerOnly struct{ core.LedgerProtocol }
+
+func TestLegacyBranchIdentityCannotBeBypassed(t *testing.T) {
+	ctx := context.Background()
+	p, _ := pow.New(pow.Config{ChainID: "legacy-policy"})
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	s, e := NewBolt(BoltConfig{Path: path}, Deps{Protocol: p})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = s.Start(ctx); e != nil {
+		t.Fatal(e)
+	}
+	if e = s.db.Update(func(tx *db.Tx) error { return tx.Bucket([]byte("meta")).Delete([]byte("branchPolicy")) }); e != nil {
+		t.Fatal(e)
+	}
+	s.Stop(ctx)
+	for _, protocol := range []core.LedgerProtocol{p, ledgerOnly{p}} {
+		next, e := NewBolt(BoltConfig{Path: path}, Deps{Protocol: protocol})
+		if e != nil {
+			t.Fatal(e)
+		}
+		if e = next.Start(ctx); e == nil {
+			next.Stop(ctx)
+			t.Fatal("legacy policy binding bypassed")
+		}
 	}
 }

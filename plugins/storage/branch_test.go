@@ -29,9 +29,9 @@ func TestBranchReorg(t *testing.T) {
 			var s core.BranchLedger
 			path := filepath.Join(t.TempDir(), "branches.db")
 			if backend == "memory" {
-				s, _ = NewMemory(MemoryConfig{}, Deps{p})
+				s, _ = NewMemory(MemoryConfig{}, Deps{Protocol: p})
 			} else {
-				v, _ := NewBolt(BoltConfig{path}, Deps{p})
+				v, _ := NewBolt(BoltConfig{path}, Deps{Protocol: p})
 				if e := v.Start(ctx); e != nil {
 					t.Fatal(e)
 				}
@@ -92,7 +92,7 @@ func TestBranchReorg(t *testing.T) {
 			}
 			if backend == "bolt" {
 				s.(*BoltStore).Stop(ctx)
-				next, _ := NewBolt(BoltConfig{path}, Deps{p})
+				next, _ := NewBolt(BoltConfig{path}, Deps{Protocol: p})
 				if e := next.Start(ctx); e != nil {
 					t.Fatal(e)
 				}

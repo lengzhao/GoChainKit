@@ -137,7 +137,11 @@ func (b *builder) Build(ctx context.Context, head core.ID) (core.Block, core.Exe
 			return fail(fmt.Errorf("empty block identity"))
 		}
 		result.BlockID = block.ID()
-		if err := b.deps.Protocol.ValidateBlock(ctx, b.deps.Ledger, parent, block, result); err != nil {
+		validate := b.deps.Protocol.ValidateBlock
+		if proposals, ok := b.deps.Protocol.(core.ProposalValidator); ok {
+			validate = proposals.ValidateProposal
+		}
+		if err := validate(ctx, b.deps.Ledger, parent, block, result); err != nil {
 			return fail(err)
 		}
 		if err := ctx.Err(); err != nil {

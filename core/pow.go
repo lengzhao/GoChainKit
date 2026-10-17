@@ -12,7 +12,7 @@ type WorkProtocol interface {
 	Protocol
 	Parent(Block) (ID, error)
 	Work(Block) (*big.Int, error)
-	Seal(context.Context, Block) (Block, error)
+	BlockSealer
 }
 
 // BranchChange describes a canonical switch. Detached is old tip first; Attached

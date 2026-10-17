@@ -1,18 +1,19 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/lengzhao/GoChainKit/core"
 	db "go.etcd.io/bbolt"
-	"math/big"
 	"reflect"
 )
 
 type branchNode struct {
-	Parent   core.ID
-	Total    string
-	Prepared preparedCommit
+	Parent    core.ID
+	Score     []byte
+	Finalized core.ID
+	Prepared  preparedCommit
 }
 type branchPlan struct {
 	Head               core.ID
@@ -21,7 +22,7 @@ type branchPlan struct {
 	Receipts           map[core.ID]core.Receipt
 }
 
-func branchGenesis(ctx context.Context, p core.WorkProtocol, g preparedCommit) (branchNode, error) {
+func branchGenesis(ctx context.Context, p core.BranchProtocol, policy core.BranchPolicy, g preparedCommit) (branchNode, error) {
 	b, e := decodeStoredBlock(p, g.Block, g.ID)
 	if e != nil {
 		return branchNode{}, e
@@ -30,16 +31,23 @@ func branchGenesis(ctx context.Context, p core.WorkProtocol, g preparedCommit) (
 	if e != nil {
 		return branchNode{}, e
 	}
-	w, e := p.Work(b)
+	if parent != "" {
+		return branchNode{}, fmt.Errorf("genesis must have no parent")
+	}
+	score, e := policy.Score(ctx, genesisHistory{p, b}, b, nil)
 	if e != nil {
 		return branchNode{}, e
 	}
-	if parent != "" || w == nil || w.Sign() != 0 {
-		return branchNode{}, fmt.Errorf("genesis must have no parent and zero work")
+	final, e := policy.Finalized(ctx, genesisHistory{p, b}, b)
+	if e != nil {
+		return branchNode{}, e
 	}
-	return branchNode{Total: "0", Prepared: g}, nil
+	if final != "" && final != g.ID {
+		return branchNode{}, fmt.Errorf("invalid genesis finality")
+	}
+	return branchNode{Score: bytes.Clone(score), Finalized: final, Prepared: g}, nil
 }
-func branchCandidate(ctx context.Context, p core.WorkProtocol, chain core.LedgerReader, parent core.ID, b core.Block, r core.ExecutionResult, graph map[core.ID]branchNode) (branchNode, error) {
+func branchCandidate(ctx context.Context, p core.BranchProtocol, policy core.BranchPolicy, chain core.LedgerReader, parent core.ID, b core.Block, r core.ExecutionResult, graph map[core.ID]branchNode) (branchNode, error) {
 	ancestor, ok := graph[parent]
 	if !ok {
 		return branchNode{}, core.ErrNotFound
@@ -66,19 +74,29 @@ func branchCandidate(ctx context.Context, p core.WorkProtocol, chain core.Ledger
 			}
 		}
 	}
-	w, e := p.Work(b)
+	score, e := policy.Score(ctx, readOnlyHistory{chain}, b, bytes.Clone(ancestor.Score))
 	if e != nil {
 		return branchNode{}, e
 	}
-	if w == nil || w.Sign() <= 0 {
-		return branchNode{}, fmt.Errorf("nonpositive block work")
+	final, e := policy.Finalized(ctx, readOnlyHistory{chain}, b)
+	if e != nil {
+		return branchNode{}, e
 	}
-	total, ok := new(big.Int).SetString(ancestor.Total, 10)
-	if !ok {
-		return branchNode{}, fmt.Errorf("corrupt cumulative work")
+	if final != "" && final != b.ID() && !containsID(path, final) {
+		return branchNode{}, fmt.Errorf("finalized block is not an ancestor")
 	}
-	total.Add(total, w)
-	return branchNode{Parent: parent, Total: total.String(), Prepared: v}, nil
+	// A branch cannot forget or move backwards from its own inherited finality.
+	if ancestor.Finalized != "" {
+		if final == "" {
+			final = ancestor.Finalized
+		} else if final != b.ID() {
+			fp, e := branchPath(graph, final)
+			if e != nil || !containsID(fp, ancestor.Finalized) {
+				return branchNode{}, fmt.Errorf("branch finality regression")
+			}
+		}
+	}
+	return branchNode{Parent: parent, Score: bytes.Clone(score), Finalized: final, Prepared: v}, nil
 }
 func branchPath(graph map[core.ID]branchNode, tip core.ID) ([]core.ID, error) {
 	var path []core.ID
@@ -97,22 +115,44 @@ func branchPath(graph map[core.ID]branchNode, tip core.ID) ([]core.ID, error) {
 	}
 	return path, nil
 }
-func planBranch(graph map[core.ID]branchNode, old, id core.ID) (branchPlan, error) {
+func planBranch(ctx context.Context, p core.BranchProtocol, policy core.BranchPolicy, chain core.ChainStore, graph map[core.ID]branchNode, old, id core.ID) (branchPlan, error) {
 	out := branchPlan{Head: old}
-	oldWork, ok := new(big.Int).SetString(graph[old].Total, 10)
-	if !ok {
-		return out, fmt.Errorf("missing canonical work")
+	oldBlock, e := decodeStoredBlock(p, graph[old].Prepared.Block, old)
+	if e != nil {
+		return out, e
 	}
-	newWork, ok := new(big.Int).SetString(graph[id].Total, 10)
-	if !ok {
-		return out, fmt.Errorf("missing candidate work")
+	newBlock, e := decodeStoredBlock(p, graph[id].Prepared.Block, id)
+	if e != nil {
+		return out, e
 	}
-	if newWork.Cmp(oldWork) <= 0 {
+	prefer, e := policy.Prefer(ctx, readOnlyHistory{chain}, oldBlock, newBlock, bytes.Clone(graph[old].Score), bytes.Clone(graph[id].Score))
+	if e != nil {
+		return out, e
+	}
+	if !prefer {
 		return out, nil
 	}
 	newPath, e := branchPath(graph, id)
 	if e != nil {
 		return out, e
+	}
+	if final := graph[old].Finalized; final != "" {
+		if !containsID(newPath, final) {
+			return out, nil
+		}
+		// Keeping the ancestor in the candidate history is insufficient: its own
+		// finality cursor must not forget the canonical certificate on a sibling.
+		candidateFinal := graph[id].Finalized
+		if candidateFinal == "" {
+			return out, nil
+		}
+		finalPath, e := branchPath(graph, candidateFinal)
+		if e != nil {
+			return out, e
+		}
+		if !containsID(finalPath, final) {
+			return out, nil
+		}
 	}
 	oldPath, e := branchPath(graph, old)
 	if e != nil {
@@ -153,7 +193,7 @@ func planBranch(graph map[core.ID]branchNode, old, id core.ID) (branchPlan, erro
 	}
 	return out, nil
 }
-func branchChange(p core.WorkProtocol, graph map[core.ID]branchNode, old core.ID, plan branchPlan) (core.BranchChange, error) {
+func branchChange(p core.BranchProtocol, graph map[core.ID]branchNode, old core.ID, plan branchPlan) (core.BranchChange, error) {
 	out := core.BranchChange{OldHead: old, NewHead: plan.Head}
 	for _, id := range plan.Detached {
 		b, e := decodeStoredBlock(p, graph[id].Prepared.Block, id)
@@ -175,9 +215,9 @@ func (s *MemoryStore) Import(ctx context.Context, parent core.ID, b core.Block, 
 	return s.importBlock(ctx, parent, b, r, false)
 }
 func (s *MemoryStore) importBlock(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult, linear bool) (core.BranchChange, error) {
-	p, ok := s.p.(core.WorkProtocol)
-	if !ok {
-		return core.BranchChange{}, fmt.Errorf("work protocol required")
+	p, ok := s.p.(core.BranchProtocol)
+	if !ok || s.policy == nil {
+		return core.BranchChange{}, fmt.Errorf("branch protocol and policy required")
 	}
 	if b == nil {
 		return core.BranchChange{}, fmt.Errorf("nil block")
@@ -195,12 +235,12 @@ func (s *MemoryStore) importBlock(ctx context.Context, parent core.ID, b core.Bl
 	if _, ok := graph[b.ID()]; ok {
 		return core.BranchChange{}, core.ErrAlreadyCommitted
 	}
-	n, e := branchCandidate(ctx, p, s, parent, b, r, graph)
+	n, e := branchCandidate(ctx, p, s.policy, s, parent, b, r, graph)
 	if e != nil {
 		return core.BranchChange{}, e
 	}
 	graph[b.ID()] = n
-	plan, e := planBranch(graph, head, b.ID())
+	plan, e := planBranch(ctx, p, s.policy, s, graph, head, b.ID())
 	if e != nil {
 		return core.BranchChange{}, e
 	}
@@ -235,9 +275,9 @@ func (s *BoltStore) Import(ctx context.Context, parent core.ID, b core.Block, r 
 	return s.importBlock(ctx, parent, b, r, false)
 }
 func (s *BoltStore) importBlock(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult, linear bool) (core.BranchChange, error) {
-	p, ok := s.p.(core.WorkProtocol)
-	if !ok {
-		return core.BranchChange{}, fmt.Errorf("work protocol required")
+	p, ok := s.p.(core.BranchProtocol)
+	if !ok || s.policy == nil {
+		return core.BranchChange{}, fmt.Errorf("branch protocol and policy required")
 	}
 	if b == nil {
 		return core.BranchChange{}, fmt.Errorf("nil block")
@@ -252,12 +292,12 @@ func (s *BoltStore) importBlock(ctx context.Context, parent core.ID, b core.Bloc
 	if _, ok := graph[b.ID()]; ok {
 		return core.BranchChange{}, core.ErrAlreadyCommitted
 	}
-	n, e := branchCandidate(ctx, p, s, parent, b, r, graph)
+	n, e := branchCandidate(ctx, p, s.policy, s, parent, b, r, graph)
 	if e != nil {
 		return core.BranchChange{}, e
 	}
 	graph[b.ID()] = n
-	plan, e := planBranch(graph, head, b.ID())
+	plan, e := planBranch(ctx, p, s.policy, s, graph, head, b.ID())
 	if e != nil {
 		return core.BranchChange{}, e
 	}
@@ -357,13 +397,13 @@ func (s *BoltStore) commitBranch(ctx context.Context, tx *db.Tx, expected core.I
 }
 
 // validateBranches revalidates every stored fork before publishing the database.
-func (s *BoltStore) validateBranches(ctx context.Context, p core.WorkProtocol, g preparedCommit) error {
+func (s *BoltStore) validateBranches(ctx context.Context, p core.BranchProtocol, g preparedCommit) error {
 	graph, head, e := s.branchGraph(ctx)
 	if e != nil {
 		return e
 	}
 	genesis, ok := graph[g.ID]
-	if !ok || genesis.Parent != "" || genesis.Total != "0" || genesis.Prepared.ID != g.ID {
+	if !ok || genesis.Parent != "" || genesis.Prepared.ID != g.ID {
 		return fmt.Errorf("invalid branch genesis")
 	}
 	if !reflect.DeepEqual(genesis.Prepared.Block, g.Block) || !reflect.DeepEqual(genesis.Prepared.State, g.State) || genesis.Prepared.Root != g.Root {
@@ -372,12 +412,19 @@ func (s *BoltStore) validateBranches(ctx context.Context, p core.WorkProtocol, g
 	if _, ok := graph[head]; !ok {
 		return fmt.Errorf("missing canonical branch")
 	}
+	expectedGenesis, e := branchGenesis(ctx, p, s.policy, g)
+	if e != nil {
+		return e
+	}
+	if !bytes.Equal(genesis.Score, expectedGenesis.Score) || genesis.Finalized != expectedGenesis.Finalized {
+		return fmt.Errorf("branch genesis policy mismatch")
+	}
 	visiting := map[core.ID]bool{}
-	totals := map[core.ID]*big.Int{g.ID: big.NewInt(0)}
-	var total func(core.ID) (*big.Int, error)
-	total = func(id core.ID) (*big.Int, error) {
-		if v, ok := totals[id]; ok {
-			return new(big.Int).Set(v), nil
+	scores := map[core.ID][]byte{g.ID: bytes.Clone(expectedGenesis.Score)}
+	var total func(core.ID) ([]byte, error)
+	total = func(id core.ID) ([]byte, error) {
+		if v, ok := scores[id]; ok {
+			return bytes.Clone(v), nil
 		}
 		n, ok := graph[id]
 		if !ok {
@@ -430,20 +477,23 @@ func (s *BoltStore) validateBranches(ctx context.Context, p core.WorkProtocol, g
 				}
 			}
 		}
-		w, e := p.Work(b)
+		score, e := s.policy.Score(ctx, readOnlyHistory{s}, b, bytes.Clone(parent))
 		if e != nil {
 			return nil, e
 		}
-		if w == nil || w.Sign() <= 0 {
-			return nil, fmt.Errorf("invalid branch work")
+		if !bytes.Equal(score, n.Score) {
+			return nil, fmt.Errorf("branch score mismatch")
 		}
-		parent.Add(parent, w)
-		if n.Total != parent.String() {
-			return nil, fmt.Errorf("cumulative work mismatch")
+		candidate, e := branchCandidate(ctx, p, s.policy, s, n.Parent, b, n.Prepared.Result, graph)
+		if e != nil {
+			return nil, e
 		}
-		totals[id] = parent
+		if candidate.Finalized != n.Finalized {
+			return nil, fmt.Errorf("branch finality mismatch")
+		}
+		scores[id] = bytes.Clone(score)
 		visiting[id] = false
-		return new(big.Int).Set(parent), nil
+		return bytes.Clone(score), nil
 	}
 	for id := range graph {
 		if _, e := total(id); e != nil {
@@ -451,8 +501,12 @@ func (s *BoltStore) validateBranches(ctx context.Context, p core.WorkProtocol, g
 		}
 	}
 	for id := range graph {
-		if totals[id].Cmp(totals[head]) > 0 {
-			return fmt.Errorf("canonical branch not heaviest")
+		plan, e := planBranch(ctx, p, s.policy, s, graph, head, id)
+		if e != nil {
+			return e
+		}
+		if plan.Head != head {
+			return fmt.Errorf("canonical branch violates policy")
 		}
 	}
 	path, e := branchPath(graph, head)
@@ -513,4 +567,13 @@ func (s *BoltStore) validateBranches(ctx context.Context, p core.WorkProtocol, g
 		}
 		return nil
 	})
+}
+
+func containsID(path []core.ID, id core.ID) bool {
+	for _, v := range path {
+		if v == id {
+			return true
+		}
+	}
+	return false
 }

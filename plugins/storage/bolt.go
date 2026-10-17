@@ -26,6 +26,7 @@ type BoltStore struct {
 	owner       *core.LedgerIdentity
 	cfg         BoltConfig
 	p           core.LedgerProtocol
+	policy      core.BranchPolicy
 	db          *db.DB
 	stopped     bool
 	starting    bool
@@ -42,7 +43,11 @@ func NewBolt(c BoltConfig, d Deps) (*BoltStore, error) {
 	if e := d.Protocol.Protocol().Validate(); e != nil {
 		return nil, e
 	}
-	return &BoltStore{owner: core.NewLedgerIdentity(), cfg: c, p: d.Protocol}, nil
+	policy, e := resolvePolicy(d)
+	if e != nil {
+		return nil, e
+	}
+	return &BoltStore{policy: policy, owner: core.NewLedgerIdentity(), cfg: c, p: d.Protocol}, nil
 }
 func (s *BoltStore) Protocol() core.ProtocolDescriptor { return s.p.Protocol() }
 func encode(v any) ([]byte, error) {
@@ -107,9 +112,10 @@ func (s *BoltStore) Start(ctx context.Context) (err error) {
 	}
 	desc := s.p.Protocol()
 	var genesisBranch branchNode
-	wp, isWork := s.p.(core.WorkProtocol)
+	wp, _ := s.p.(core.BranchProtocol)
+	isWork := s.policy != nil
 	if isWork {
-		genesisBranch, e = branchGenesis(ctx, wp, g)
+		genesisBranch, e = branchGenesis(ctx, wp, s.policy, g)
 		if e != nil {
 			return e
 		}
@@ -134,6 +140,14 @@ func (s *BoltStore) Start(ctx context.Context) (err error) {
 			if e := get(tx, "meta", []byte("protocol"), &stored); e != nil {
 				return e
 			}
+			storedPolicy := string(meta.Get([]byte("branchPolicy")))
+			expectedPolicy := ""
+			if s.policy != nil {
+				expectedPolicy = s.policy.PolicyID()
+			}
+			if storedPolicy != expectedPolicy {
+				return fmt.Errorf("database branch policy mismatch")
+			}
 			if stored != desc {
 				return fmt.Errorf("database protocol mismatch")
 			}
@@ -152,8 +166,8 @@ func (s *BoltStore) Start(ctx context.Context) (err error) {
 			if genesisID != g.ID || genesisRoot != g.Root || !bytes.Equal(genesisBytes, g.Block) {
 				return fmt.Errorf("database genesis mismatch")
 			}
-			if isWork && tx.Bucket([]byte("branches")) == nil {
-				return fmt.Errorf("missing branch metadata")
+			if isWork != (tx.Bucket([]byte("branches")) != nil) {
+				return fmt.Errorf("database branch capability mismatch")
 			}
 			for _, b := range buckets {
 				if tx.Bucket([]byte(b)) == nil {
@@ -171,6 +185,9 @@ func (s *BoltStore) Start(ctx context.Context) (err error) {
 			}
 		}
 		if isWork {
+			if e := tx.Bucket([]byte("meta")).Put([]byte("branchPolicy"), []byte(s.policy.PolicyID())); e != nil {
+				return e
+			}
 			if _, e := tx.CreateBucket([]byte("branches")); e != nil {
 				return e
 			}
@@ -196,7 +213,7 @@ func (s *BoltStore) Start(ctx context.Context) (err error) {
 	if e != nil {
 		return e
 	}
-	reader := &BoltStore{owner: s.owner, p: s.p, db: database}
+	reader := &BoltStore{owner: s.owner, p: s.p, policy: s.policy, db: database}
 	head, e := reader.Head(ctx)
 	if e == nil {
 		_, e = reader.Block(ctx, head)
@@ -326,7 +343,7 @@ func (s *BoltStore) Snapshot(ctx context.Context, id core.ID) (core.StateReader,
 	return &stateSnapshot{State: state, Commitment: root}, nil
 }
 func (s *BoltStore) Commit(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) error {
-	if _, ok := s.p.(core.WorkProtocol); ok {
+	if s.policy != nil {
 		_, e := s.importBlock(ctx, parent, b, r, true)
 		return e
 	}

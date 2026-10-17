@@ -35,7 +35,7 @@ func TestChangedGenesisRejectedAfterCommit(t *testing.T) {
 		t.Fatal(e)
 	}
 	s.Stop(ctx)
-	next, _ := NewBolt(BoltConfig{path}, Deps{changedGenesis{mustProtocol("dev")}})
+	next, _ := NewBolt(BoltConfig{path}, Deps{Protocol: changedGenesis{mustProtocol("dev")}})
 	if e := next.Start(ctx); e == nil {
 		next.Stop(ctx)
 		t.Fatal("accepted changed genesis with same descriptor")
@@ -77,7 +77,7 @@ func TestRecoveryNotPublished(t *testing.T) {
 			s := openStore(t, path)
 			s.Stop(ctx)
 			p := &barrierProtocol{baseProtocol: mustProtocol("dev"), entered: make(chan struct{}), release: make(chan struct{}), fail: !stop}
-			s, _ = NewBolt(BoltConfig{path}, Deps{p})
+			s, _ = NewBolt(BoltConfig{path}, Deps{Protocol: p})
 			done := make(chan error, 1)
 			go func() { done <- s.Start(ctx) }()
 			<-p.entered
@@ -126,7 +126,7 @@ func TestMissingGenesisMetadataRejected(t *testing.T) {
 		t.Fatal(e)
 	}
 	s.Stop(ctx)
-	s, _ = NewBolt(BoltConfig{path}, Deps{mustProtocol("dev")})
+	s, _ = NewBolt(BoltConfig{path}, Deps{Protocol: mustProtocol("dev")})
 	if e := s.Start(ctx); e == nil {
 		s.Stop(ctx)
 		t.Fatal("accepted missing genesis metadata")
@@ -138,7 +138,7 @@ func TestRecoveryPublishesAfterValidation(t *testing.T) {
 	s := openStore(t, path)
 	s.Stop(ctx)
 	p := &barrierProtocol{baseProtocol: mustProtocol("dev"), entered: make(chan struct{}), release: make(chan struct{})}
-	s, _ = NewBolt(BoltConfig{path}, Deps{p})
+	s, _ = NewBolt(BoltConfig{path}, Deps{Protocol: p})
 	done := make(chan error, 1)
 	go func() { done <- s.Start(ctx) }()
 	<-p.entered

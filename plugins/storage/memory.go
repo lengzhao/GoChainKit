@@ -13,11 +13,13 @@ import (
 type MemoryConfig struct{}
 type Deps struct {
 	Protocol core.LedgerProtocol `json:"protocol"`
+	Policy   core.BranchPolicy   `json:"policy,omitempty"`
 }
 type MemoryStore struct {
 	mu           sync.RWMutex
 	owner        *core.LedgerIdentity
 	p            core.LedgerProtocol
+	policy       core.BranchPolicy
 	branches     map[core.ID]branchNode
 	head         core.ID
 	blocks       map[core.ID][]byte
@@ -35,13 +37,18 @@ func NewMemory(_ MemoryConfig, d Deps) (*MemoryStore, error) {
 	if e := d.Protocol.Protocol().Validate(); e != nil {
 		return nil, e
 	}
+	policy, e := resolvePolicy(d)
+	if e != nil {
+		return nil, e
+	}
 	g, e := prepareGenesis(context.Background(), d.Protocol)
 	if e != nil {
 		return nil, e
 	}
-	store := &MemoryStore{owner: core.NewLedgerIdentity(), p: d.Protocol, head: g.ID, blocks: map[core.ID][]byte{g.ID: g.Block}, states: map[core.ID]map[string][]byte{g.ID: g.State}, roots: map[core.ID]core.Commitment{g.ID: g.Root}, transactions: map[core.ID]storedTransaction{}, receipts: map[core.ID]core.Receipt{}}
-	if p, ok := d.Protocol.(core.WorkProtocol); ok {
-		n, e := branchGenesis(context.Background(), p, g)
+	store := &MemoryStore{owner: core.NewLedgerIdentity(), p: d.Protocol, policy: policy, head: g.ID, blocks: map[core.ID][]byte{g.ID: g.Block}, states: map[core.ID]map[string][]byte{g.ID: g.State}, roots: map[core.ID]core.Commitment{g.ID: g.Root}, transactions: map[core.ID]storedTransaction{}, receipts: map[core.ID]core.Receipt{}}
+	if policy != nil {
+		p := d.Protocol.(core.BranchProtocol)
+		n, e := branchGenesis(context.Background(), p, policy, g)
 		if e != nil {
 			return nil, e
 		}
@@ -111,7 +118,7 @@ func (s *MemoryStore) Snapshot(ctx context.Context, id core.ID) (core.StateReade
 	return &stateSnapshot{State: copyState(state), Commitment: s.roots[id]}, nil
 }
 func (s *MemoryStore) Commit(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) error {
-	if _, ok := s.p.(core.WorkProtocol); ok {
+	if s.policy != nil {
 		_, e := s.importBlock(ctx, parent, b, r, true)
 		return e
 	}

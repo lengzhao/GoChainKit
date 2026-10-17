@@ -55,9 +55,11 @@ type ConfirmedTransaction struct {
 	Index       uint64
 }
 type ExecutionResult struct {
-	Parent    ID
-	BlockID   ID
-	Writes    map[string][]byte
+	Parent  ID
+	BlockID ID
+	Writes  map[string][]byte
+	// Deletes removes keys explicitly. A key may not occur in both Writes and Deletes.
+	Deletes   []string
 	Receipts  []Receipt
 	StateRoot Commitment
 }
@@ -83,6 +85,18 @@ type BlockFactory interface {
 }
 type BlockValidator interface {
 	ValidateBlock(context.Context, ChainStore, Block, Block, ExecutionResult) error
+}
+
+// ProposalValidator checks an execution-bound finalized proposal before consensus
+// sealing. Storage always calls ValidateBlock and must reject unsealed proposals.
+// Protocols without this optional capability retain finalized-block validation.
+type ProposalValidator interface {
+	ValidateProposal(context.Context, ChainStore, Block, Block, ExecutionResult) error
+}
+
+// BlockSealer performs consensus proof production after execution finalization.
+type BlockSealer interface {
+	Seal(context.Context, Block) (Block, error)
 }
 
 // CandidateValidator checks execution-independent candidate binding before state
@@ -136,8 +150,9 @@ type LedgerProtocol interface {
 // never persist. ValidateBlock checks ancestry, commitments and binding, using
 // ChainStore to resolve extra references when necessary. Implementers can
 // compose these smaller interfaces rather than put every method on one object.
-// Execute binds BlockID to the draft; Finalize returns the sealed block, and the
-// builder then rebinds BlockID to its final ID before validation and persistence.
+// Execute binds BlockID to the draft; Finalize binds execution commitments, and
+// the builder rebinds BlockID to its finalized ID. Optional proposal validation
+// allows consensus sealing afterward; storage validates the fully sealed block.
 type Protocol interface {
 	CandidateValidator
 	ProtocolBound

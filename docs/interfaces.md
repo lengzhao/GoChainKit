@@ -65,7 +65,7 @@ internal/testprotocol 提供测试样例：自定义 Label/Body 交易，无签�
 
 ## 当前能力边界
 
-默认存储提供单一 canonical cursor，状态为键值快照和写入集；多头链、删除语义、特殊状态树或其他共识算法可能需要扩展能力或替换相应插件。自定义区块格式不等于已经实现 GOVM 的多链协议，也不意味着任意共识算法可以互换。
+默认存储提供单一 canonical cursor，状态为键值快照、显式写入与删除集；多头链、特殊状态树可能需要扩展能力或替换相应插件。自定义区块格式不等于已经实现 GOVM 的多链协议，也不意味着任意共识算法可以互换。
 
 这些边界属于当前具体组件能力，不应通过给所有交易、区块添加默认字段来解决。
 
@@ -81,4 +81,10 @@ TransactionError 必须指明当前候选中的交易 ID 和 Rejected/Deferred�
 
 ## 可选工作量与分支能力
 
-WorkProtocol 提供 Parent、Work 和 Seal；BranchLedger.Import 保存已验证的分支并返回主链切换中的 Attached/Detached。通用 Protocol 与 Block 不因此要求 PoW 字段，原单节点 KV 组合继续可用。Network 仅提供有界通信与生命周期能力，不暴露 libp2p 的 host/peer 类型。
+BranchProtocol 是可选单父分支能力，与通用Protocol的任意引用格式分离；BranchPolicy独立提供不透明Score、Prefer选链和Finalized最终性，并绑定策略配置身份。WorkProtocol提供Parent、Work和BlockSealer，旧工作量规则自动适配为策略。BranchLedger.Import保存已验证的分支并返回主链切换中的Attached/Detached，存储独立阻止跨最终确认点的重组。通用 Protocol 与 Block 不因此要求 PoW 字段，原单节点 KV 组合继续可用。Network 仅提供有界通信与生命周期能力，不暴露 libp2p 的 host/peer 类型。
+
+## 执行定稿与共识封印
+
+`BlockFactory.Finalize` 绑定执行承诺。提供可选 `ProposalValidator` 的协议可让构块器验证尚未封印的提案；之后共识通过 `BlockSealer` 生成证明。持久化始终调用 `ValidateBlock`，未封印提案不能落盘。未提供新能力的旧协议仍按原定稿后验证路径运行。
+
+状态变更的 `Writes` 与 `Deletes` 分开表达，空值仍表示存在的键。`core.ApplyStateChanges` 提供统一、复制隔离的应用语义；删除重复或与写入冲突明确拒绝。

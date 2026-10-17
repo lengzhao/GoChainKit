@@ -103,8 +103,9 @@ func prepareCommit(ctx context.Context, p core.LedgerProtocol, chain core.Ledger
 	if e != nil {
 		return bad(e)
 	}
-	for k, v := range r.Writes {
-		state[k] = bytes.Clone(v)
+	state, e = core.ApplyStateChanges(ctx, state, r.Writes, r.Deletes)
+	if e != nil {
+		return bad(e)
 	}
 	root, e := p.StateCommitment(ctx, state)
 	if e != nil {
@@ -155,7 +156,7 @@ func prepareCommit(ctx context.Context, p core.LedgerProtocol, chain core.Ledger
 		receipt.Data = bytes.Clone(receipt.Data)
 		out.Receipts[receipt.TransactionID] = receipt
 	}
-	out.Result = core.ExecutionResult{Parent: r.Parent, BlockID: r.BlockID, StateRoot: r.StateRoot, Writes: copyState(r.Writes)}
+	out.Result = core.ExecutionResult{Parent: r.Parent, BlockID: r.BlockID, StateRoot: r.StateRoot, Writes: copyState(r.Writes), Deletes: append([]string(nil), r.Deletes...)}
 	// Preserve protocol receipt ordering.
 	out.Result.Receipts = nil
 	for _, receipt := range r.Receipts {
