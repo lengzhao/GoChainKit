@@ -7,7 +7,6 @@ import (
 	"encoding/gob"
 	"fmt"
 	"github.com/lengzhao/GoChainKit/core"
-	"github.com/lengzhao/GoChainKit/runtime/ledger"
 	"github.com/lengzhao/pluginkit"
 	db "go.etcd.io/bbolt"
 	"os"
@@ -24,8 +23,9 @@ type BoltConfig struct {
 type TransactionRecord = core.ConfirmedTransaction
 type BoltStore struct {
 	mu          sync.RWMutex
+	owner       *core.LedgerIdentity
 	cfg         BoltConfig
-	p           core.Protocol
+	p           core.LedgerProtocol
 	db          *db.DB
 	stopped     bool
 	starting    bool
@@ -42,7 +42,7 @@ func NewBolt(c BoltConfig, d Deps) (*BoltStore, error) {
 	if e := d.Protocol.Protocol().Validate(); e != nil {
 		return nil, e
 	}
-	return &BoltStore{cfg: c, p: d.Protocol}, nil
+	return &BoltStore{owner: core.NewLedgerIdentity(), cfg: c, p: d.Protocol}, nil
 }
 func (s *BoltStore) Protocol() core.ProtocolDescriptor { return s.p.Protocol() }
 func encode(v any) ([]byte, error) {
@@ -101,7 +101,7 @@ func (s *BoltStore) Start(ctx context.Context) (err error) {
 		s.mu.Unlock()
 		cancel()
 	}()
-	g, e := ledger.Genesis(ctx, s.p)
+	g, e := prepareGenesis(ctx, s.p)
 	if e != nil {
 		return e
 	}
@@ -177,7 +177,7 @@ func (s *BoltStore) Start(ctx context.Context) (err error) {
 	if e != nil {
 		return e
 	}
-	reader := &BoltStore{p: s.p, db: database}
+	reader := &BoltStore{owner: s.owner, p: s.p, db: database}
 	head, e := reader.Head(ctx)
 	if e == nil {
 		_, e = reader.Block(ctx, head)
@@ -266,7 +266,7 @@ func (s *BoltStore) Block(ctx context.Context, id core.ID) (core.Block, error) {
 	if e != nil {
 		return nil, e
 	}
-	return ledger.DecodeBlock(s.p, data, id)
+	return decodeStoredBlock(s.p, data, id)
 }
 func (s *BoltStore) Receipt(ctx context.Context, id core.ID) (core.Receipt, error) {
 	var r core.Receipt
@@ -274,12 +274,12 @@ func (s *BoltStore) Receipt(ctx context.Context, id core.ID) (core.Receipt, erro
 	return r, e
 }
 func (s *BoltStore) Transaction(ctx context.Context, id core.ID) (TransactionRecord, error) {
-	var r ledger.Record
+	var r storedTransaction
 	e := s.view(ctx, func(tx *db.Tx) error { return get(tx, "transactions", []byte(id), &r) })
 	if e != nil {
 		return TransactionRecord{}, e
 	}
-	t, e := ledger.DecodeTransaction(s.p, r.Data, id)
+	t, e := decodeStoredTransaction(s.p, r.Data, id)
 	return TransactionRecord{Transaction: t, BlockID: r.BlockID, Index: r.Index}, e
 }
 func (s *BoltStore) Snapshot(ctx context.Context, id core.ID) (core.StateReader, error) {
@@ -301,7 +301,7 @@ func (s *BoltStore) Snapshot(ctx context.Context, id core.ID) (core.StateReader,
 	if root != actual {
 		return nil, fmt.Errorf("corrupt state")
 	}
-	return &ledger.Snapshot{State: state, Commitment: root}, nil
+	return &stateSnapshot{State: state, Commitment: root}, nil
 }
 func (s *BoltStore) Commit(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) error {
 	if b == nil {
@@ -322,7 +322,7 @@ func (s *BoltStore) Commit(ctx context.Context, parent core.ID, b core.Block, r 
 	if parent != head {
 		return core.ErrConflict
 	}
-	v, e := ledger.Prepare(ctx, s.p, s, parent, b, r)
+	v, e := prepareCommit(ctx, s.p, s, parent, b, r)
 	if e != nil {
 		return e
 	}
@@ -338,7 +338,7 @@ func (s *BoltStore) Commit(ctx context.Context, parent core.ID, b core.Block, r 
 	}
 	return e
 }
-func (s *BoltStore) commit(ctx context.Context, tx *db.Tx, parent core.ID, v ledger.Prepared) error {
+func (s *BoltStore) commit(ctx context.Context, tx *db.Tx, parent core.ID, v preparedCommit) error {
 	if e := ctx.Err(); e != nil {
 		return e
 	}
@@ -385,3 +385,7 @@ func (s *BoltStore) commit(ctx context.Context, tx *db.Tx, parent core.ID, v led
 	}
 	return put(tx, "meta", []byte("head"), v.ID)
 }
+
+func (s *BoltStore) LedgerID() *core.LedgerIdentity { return s.owner }
+
+var _ core.Ledger = (*BoltStore)(nil)

@@ -4,6 +4,7 @@ package consensus
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/pluginkit"
@@ -25,7 +26,8 @@ func NewSingle(cfg SingleConfig) (core.Consensus, error) {
 }
 
 // Run produces on each tick, serially validating and committing before the next
-// proposal. Host callbacks must honor cancellation. Any host error terminates Run.
+// proposal. Host callbacks must honor cancellation. Temporary proposal/head
+// conflicts retry; fatal host errors terminate Run.
 func (c *consensus) Run(ctx context.Context, h core.ConsensusHost) error {
 	if h == nil {
 		return fmt.Errorf("consensus/single: host required")
@@ -42,15 +44,25 @@ func (c *consensus) Run(ctx context.Context, h core.ConsensusHost) error {
 			}
 			b, err := h.Propose(ctx)
 			if err != nil {
+				if errors.Is(err, core.ErrNoProposal) || errors.Is(err, core.ErrConflict) {
+					continue
+				}
 				return fmt.Errorf("propose: %w", err)
 			}
 			if err := h.Validate(ctx, b); err != nil {
+				if errors.Is(err, core.ErrNoProposal) || errors.Is(err, core.ErrConflict) {
+					continue
+				}
 				return fmt.Errorf("validate: %w", err)
 			}
 			if err := ctx.Err(); err != nil {
 				return err
 			}
 			if err := h.Commit(ctx, b); err != nil {
+				var committed *core.CommittedError
+				if !errors.As(err, &committed) && (errors.Is(err, core.ErrNoProposal) || errors.Is(err, core.ErrConflict)) {
+					continue
+				}
 				return fmt.Errorf("commit: %w", err)
 			}
 		}

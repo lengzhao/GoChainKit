@@ -6,23 +6,23 @@ import (
 	"context"
 	"fmt"
 	"github.com/lengzhao/GoChainKit/core"
-	"github.com/lengzhao/GoChainKit/runtime/ledger"
 	"github.com/lengzhao/pluginkit"
 	"sync"
 )
 
 type MemoryConfig struct{}
 type Deps struct {
-	Protocol core.Protocol `json:"protocol"`
+	Protocol core.LedgerProtocol `json:"protocol"`
 }
 type MemoryStore struct {
 	mu           sync.RWMutex
-	p            core.Protocol
+	owner        *core.LedgerIdentity
+	p            core.LedgerProtocol
 	head         core.ID
 	blocks       map[core.ID][]byte
 	states       map[core.ID]map[string][]byte
 	roots        map[core.ID]core.Commitment
-	transactions map[core.ID]ledger.Record
+	transactions map[core.ID]storedTransaction
 	receipts     map[core.ID]core.Receipt
 }
 
@@ -34,11 +34,11 @@ func NewMemory(_ MemoryConfig, d Deps) (*MemoryStore, error) {
 	if e := d.Protocol.Protocol().Validate(); e != nil {
 		return nil, e
 	}
-	g, e := ledger.Genesis(context.Background(), d.Protocol)
+	g, e := prepareGenesis(context.Background(), d.Protocol)
 	if e != nil {
 		return nil, e
 	}
-	return &MemoryStore{p: d.Protocol, head: g.ID, blocks: map[core.ID][]byte{g.ID: g.Block}, states: map[core.ID]map[string][]byte{g.ID: g.State}, roots: map[core.ID]core.Commitment{g.ID: g.Root}, transactions: map[core.ID]ledger.Record{}, receipts: map[core.ID]core.Receipt{}}, nil
+	return &MemoryStore{owner: core.NewLedgerIdentity(), p: d.Protocol, head: g.ID, blocks: map[core.ID][]byte{g.ID: g.Block}, states: map[core.ID]map[string][]byte{g.ID: g.State}, roots: map[core.ID]core.Commitment{g.ID: g.Root}, transactions: map[core.ID]storedTransaction{}, receipts: map[core.ID]core.Receipt{}}, nil
 }
 func (s *MemoryStore) Protocol() core.ProtocolDescriptor { return s.p.Protocol() }
 func (s *MemoryStore) Head(ctx context.Context) (core.ID, error) {
@@ -60,7 +60,7 @@ func (s *MemoryStore) Block(ctx context.Context, id core.ID) (core.Block, error)
 	if !ok {
 		return nil, core.ErrNotFound
 	}
-	return ledger.DecodeBlock(s.p, data, id)
+	return decodeStoredBlock(s.p, data, id)
 }
 func (s *MemoryStore) Receipt(ctx context.Context, id core.ID) (core.Receipt, error) {
 	if e := ctx.Err(); e != nil {
@@ -86,7 +86,7 @@ func (s *MemoryStore) Transaction(ctx context.Context, id core.ID) (core.Confirm
 	if !ok {
 		return core.ConfirmedTransaction{}, core.ErrNotFound
 	}
-	t, e := ledger.DecodeTransaction(s.p, r.Data, id)
+	t, e := decodeStoredTransaction(s.p, r.Data, id)
 	return core.ConfirmedTransaction{Transaction: t, BlockID: r.BlockID, Index: r.Index}, e
 }
 func (s *MemoryStore) Snapshot(ctx context.Context, id core.ID) (core.StateReader, error) {
@@ -99,7 +99,7 @@ func (s *MemoryStore) Snapshot(ctx context.Context, id core.ID) (core.StateReade
 	if !ok {
 		return nil, core.ErrNotFound
 	}
-	return &ledger.Snapshot{State: ledger.Copy(state), Commitment: s.roots[id]}, nil
+	return &stateSnapshot{State: copyState(state), Commitment: s.roots[id]}, nil
 }
 func (s *MemoryStore) Commit(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) error {
 	if b == nil {
@@ -115,7 +115,7 @@ func (s *MemoryStore) Commit(ctx context.Context, parent core.ID, b core.Block, 
 	if head != parent {
 		return core.ErrConflict
 	}
-	v, e := ledger.Prepare(ctx, s.p, s, parent, b, r)
+	v, e := prepareCommit(ctx, s.p, s, parent, b, r)
 	if e != nil {
 		return e
 	}
@@ -147,3 +147,7 @@ func (s *MemoryStore) Commit(ctx context.Context, parent core.ID, b core.Block, 
 	s.head = v.ID
 	return nil
 }
+
+func (s *MemoryStore) LedgerID() *core.LedgerIdentity { return s.owner }
+
+var _ core.Ledger = (*MemoryStore)(nil)

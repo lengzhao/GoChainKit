@@ -1,5 +1,5 @@
-// Package ledger holds protocol-neutral storage preparation helpers.
-package ledger
+// Storage helpers keep preparation and isolated snapshots private to backends.
+package storage
 
 import (
 	"bytes"
@@ -8,29 +8,29 @@ import (
 	"github.com/lengzhao/GoChainKit/core"
 )
 
-type Record struct {
+type storedTransaction struct {
 	Data    []byte
 	BlockID core.ID
 	Index   uint64
 }
-type Prepared struct {
+type preparedCommit struct {
 	Result       core.ExecutionResult
 	ID           core.ID
 	Block        []byte
 	State        map[string][]byte
 	Root         core.Commitment
-	Transactions map[core.ID]Record
+	Transactions map[core.ID]storedTransaction
 	Receipts     map[core.ID]core.Receipt
 }
 
-func Copy(s map[string][]byte) map[string][]byte {
+func copyState(s map[string][]byte) map[string][]byte {
 	o := make(map[string][]byte, len(s))
 	for k, v := range s {
 		o[k] = bytes.Clone(v)
 	}
 	return o
 }
-func DecodeBlock(p core.Protocol, data []byte, id core.ID) (core.Block, error) {
+func decodeStoredBlock(p core.LedgerProtocol, data []byte, id core.ID) (core.Block, error) {
 	b, e := p.DecodeBlock(bytes.Clone(data))
 	if e != nil {
 		return nil, e
@@ -47,7 +47,7 @@ func DecodeBlock(p core.Protocol, data []byte, id core.ID) (core.Block, error) {
 	}
 	return b, nil
 }
-func DecodeTransaction(p core.Protocol, data []byte, id core.ID) (core.Transaction, error) {
+func decodeStoredTransaction(p core.LedgerProtocol, data []byte, id core.ID) (core.Transaction, error) {
 	t, e := p.DecodeTransaction(bytes.Clone(data))
 	if e != nil {
 		return nil, e
@@ -64,26 +64,26 @@ func DecodeTransaction(p core.Protocol, data []byte, id core.ID) (core.Transacti
 	}
 	return t, nil
 }
-func Genesis(ctx context.Context, p core.Protocol) (Prepared, error) {
+func prepareGenesis(ctx context.Context, p core.LedgerProtocol) (preparedCommit, error) {
 	b, s, e := p.Genesis(ctx)
 	if e != nil {
-		return Prepared{}, e
+		return preparedCommit{}, e
 	}
 	if b == nil || b.ID() == "" {
-		return Prepared{}, fmt.Errorf("empty genesis")
+		return preparedCommit{}, fmt.Errorf("empty genesis")
 	}
 	data, e := p.EncodeBlock(b)
 	if e != nil {
-		return Prepared{}, e
+		return preparedCommit{}, e
 	}
-	if _, e = DecodeBlock(p, data, b.ID()); e != nil {
-		return Prepared{}, e
+	if _, e = decodeStoredBlock(p, data, b.ID()); e != nil {
+		return preparedCommit{}, e
 	}
 	root, e := p.StateCommitment(ctx, s)
-	return Prepared{ID: b.ID(), Block: bytes.Clone(data), State: Copy(s), Root: root}, e
+	return preparedCommit{ID: b.ID(), Block: bytes.Clone(data), State: copyState(s), Root: root}, e
 }
-func Prepare(ctx context.Context, p core.Protocol, chain core.ChainStore, parent core.ID, b core.Block, r core.ExecutionResult) (Prepared, error) {
-	bad := func(e error) (Prepared, error) { return Prepared{}, e }
+func prepareCommit(ctx context.Context, p core.LedgerProtocol, chain core.LedgerReader, parent core.ID, b core.Block, r core.ExecutionResult) (preparedCommit, error) {
+	bad := func(e error) (preparedCommit, error) { return preparedCommit{}, e }
 	if e := ctx.Err(); e != nil {
 		return bad(e)
 	}
@@ -94,11 +94,7 @@ func Prepare(ctx context.Context, p core.Protocol, chain core.ChainStore, parent
 	if e != nil {
 		return bad(e)
 	}
-	ss, ok := chain.(core.StateStore)
-	if !ok {
-		return bad(fmt.Errorf("missing state store"))
-	}
-	snap, e := ss.Snapshot(ctx, parent)
+	snap, e := chain.Snapshot(ctx, parent)
 	if e != nil {
 		return bad(e)
 	}
@@ -121,7 +117,7 @@ func Prepare(ctx context.Context, p core.Protocol, chain core.ChainStore, parent
 	if e != nil {
 		return bad(e)
 	}
-	b, e = DecodeBlock(p, data, b.ID())
+	b, e = decodeStoredBlock(p, data, b.ID())
 	if e != nil {
 		return bad(e)
 	}
@@ -132,7 +128,7 @@ func Prepare(ctx context.Context, p core.Protocol, chain core.ChainStore, parent
 	if e != nil {
 		return bad(e)
 	}
-	out := Prepared{ID: b.ID(), Block: bytes.Clone(data), State: Copy(state), Root: root, Transactions: map[core.ID]Record{}, Receipts: map[core.ID]core.Receipt{}}
+	out := preparedCommit{ID: b.ID(), Block: bytes.Clone(data), State: copyState(state), Root: root, Transactions: map[core.ID]storedTransaction{}, Receipts: map[core.ID]core.Receipt{}}
 	for i, t := range txs {
 		if t == nil || t.ID() == "" {
 			return bad(fmt.Errorf("invalid transaction"))
@@ -144,10 +140,10 @@ func Prepare(ctx context.Context, p core.Protocol, chain core.ChainStore, parent
 		if e != nil {
 			return bad(e)
 		}
-		if _, e = DecodeTransaction(p, encoded, t.ID()); e != nil {
+		if _, e = decodeStoredTransaction(p, encoded, t.ID()); e != nil {
 			return bad(e)
 		}
-		out.Transactions[t.ID()] = Record{bytes.Clone(encoded), b.ID(), uint64(i)}
+		out.Transactions[t.ID()] = storedTransaction{bytes.Clone(encoded), b.ID(), uint64(i)}
 	}
 	for _, receipt := range r.Receipts {
 		if _, ok := out.Transactions[receipt.TransactionID]; !ok {
@@ -159,7 +155,7 @@ func Prepare(ctx context.Context, p core.Protocol, chain core.ChainStore, parent
 		receipt.Data = bytes.Clone(receipt.Data)
 		out.Receipts[receipt.TransactionID] = receipt
 	}
-	out.Result = core.ExecutionResult{Parent: r.Parent, BlockID: r.BlockID, StateRoot: r.StateRoot, Writes: Copy(r.Writes)}
+	out.Result = core.ExecutionResult{Parent: r.Parent, BlockID: r.BlockID, StateRoot: r.StateRoot, Writes: copyState(r.Writes)}
 	// Preserve protocol receipt ordering.
 	out.Result.Receipts = nil
 	for _, receipt := range r.Receipts {
@@ -169,12 +165,12 @@ func Prepare(ctx context.Context, p core.Protocol, chain core.ChainStore, parent
 	return out, nil
 }
 
-type Snapshot struct {
+type stateSnapshot struct {
 	State      map[string][]byte
 	Commitment core.Commitment
 }
 
-func (s *Snapshot) Get(ctx context.Context, key []byte) ([]byte, error) {
+func (s *stateSnapshot) Get(ctx context.Context, key []byte) ([]byte, error) {
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
@@ -184,11 +180,11 @@ func (s *Snapshot) Get(ctx context.Context, key []byte) ([]byte, error) {
 	}
 	return bytes.Clone(v), nil
 }
-func (s *Snapshot) Entries(ctx context.Context) (map[string][]byte, error) {
+func (s *stateSnapshot) Entries(ctx context.Context) (map[string][]byte, error) {
 	if e := ctx.Err(); e != nil {
 		return nil, e
 	}
-	return Copy(s.State), nil
+	return copyState(s.State), nil
 }
-func (s *Snapshot) Root() core.Commitment { return s.Commitment }
-func (s *Snapshot) Close() error          { return nil }
+func (s *stateSnapshot) Root() core.Commitment { return s.Commitment }
+func (s *stateSnapshot) Close() error          { return nil }

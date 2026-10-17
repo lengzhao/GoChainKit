@@ -42,3 +42,21 @@ func TestCommitAndIsolation(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+func TestMemoryLedgerIdentity(t *testing.T) {
+	p, _ := protocol.New(protocol.Config{ChainID: "identity"})
+	a, e := NewMemory(MemoryConfig{}, Deps{Protocol: p})
+	if e != nil {
+		t.Fatal(e)
+	}
+	b, e := NewMemory(MemoryConfig{}, Deps{Protocol: p})
+	if e != nil {
+		t.Fatal(e)
+	}
+	if a.LedgerID() == nil || a.LedgerID() == b.LedgerID() {
+		t.Fatal("ledger instances must have distinct nonnil owner tokens")
+	}
+	if a.LedgerID() != a.LedgerID() {
+		t.Fatal("unstable ledger token")
+	}
+}

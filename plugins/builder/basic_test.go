@@ -6,6 +6,7 @@ import (
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
 	pool "github.com/lengzhao/GoChainKit/plugins/mempool"
+	"github.com/lengzhao/GoChainKit/plugins/selector"
 	store "github.com/lengzhao/GoChainKit/plugins/storage"
 	"testing"
 )
@@ -32,7 +33,11 @@ func TestBuildCustomFormatWithoutRemoving(t *testing.T) {
 	if err := p.Add(ctx, testprotocol.Tx{Label: "custom", Body: []byte("body")}); err != nil {
 		t.Fatal(err)
 	}
-	deps := Deps{Protocol: protocol, Pool: p, Chain: s, States: s, Executor: testprotocol.Executor{P: protocol}}
+	selection, err := selector.NewFIFO(selector.FIFOConfig{}, selector.Deps{Protocol: protocol})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deps := Deps{Protocol: protocol, Pool: p, Ledger: s, Selector: selection, Executor: testprotocol.Executor{P: protocol}}
 	b, err := NewBasic(BasicConfig{MaxTransactionBytes: 4096}, deps)
 	if err != nil {
 		t.Fatal(err)
@@ -46,7 +51,7 @@ func TestBuildCustomFormatWithoutRemoving(t *testing.T) {
 	if frame.Revision != 1 || frame.Ancestor != head || len(frame.Records) != 1 || result.BlockID != block.ID() {
 		t.Fatal("bad candidate")
 	}
-	remaining, err := p.Select(ctx, 4096)
+	remaining, err := p.Candidates(ctx)
 	if err != nil || len(remaining) != 1 {
 		t.Fatal("removed before commit", err)
 	}

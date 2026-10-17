@@ -14,7 +14,7 @@ type MemoryConfig struct {
 	MaxBytes        int `json:"maxBytes"`
 }
 type Deps struct {
-	Protocol core.Protocol `json:"protocol"`
+	Protocol core.TransactionProtocol `json:"protocol"`
 }
 type entry struct {
 	id   core.ID
@@ -23,7 +23,7 @@ type entry struct {
 type pool struct {
 	mu       sync.Mutex
 	cfg      MemoryConfig
-	protocol core.Protocol
+	protocol core.TransactionProtocol
 	entries  []entry
 	ids      map[core.ID]bool
 	bytes    int
@@ -78,20 +78,14 @@ func (p *pool) Add(ctx context.Context, t core.Transaction) error {
 	p.bytes += len(data)
 	return nil
 }
-func (p *pool) Select(ctx context.Context, budget int) ([]core.Transaction, error) {
+func (p *pool) Candidates(ctx context.Context) ([]core.Transaction, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
-	}
-	if budget < 0 {
-		return nil, fmt.Errorf("negative selection budget")
 	}
 	p.mu.Lock()
 	var selected [][]byte
 	for _, e := range p.entries {
-		if len(e.data) <= budget {
-			selected = append(selected, bytes.Clone(e.data))
-			budget -= len(e.data)
-		}
+		selected = append(selected, bytes.Clone(e.data))
 	}
 	p.mu.Unlock()
 	var out []core.Transaction

@@ -5,16 +5,15 @@ import (
 	"context"
 	"fmt"
 	"github.com/lengzhao/GoChainKit/core"
+	"time"
 )
 
 type CoordinatorDeps struct {
-	Protocol  core.Protocol     `json:"protocol"`
-	Builder   core.BlockBuilder `json:"builder"`
-	Chain     core.ChainStore   `json:"chain"`
-	States    core.StateStore   `json:"states"`
-	Executor  core.Executor     `json:"executor"`
-	Committer core.Committer    `json:"committer"`
-	Pool      core.Mempool      `json:"pool"`
+	Protocol core.CoordinatorProtocol `json:"protocol"`
+	Ledger   core.Ledger              `json:"ledger"`
+	Builder  core.BlockBuilder        `json:"builder"`
+	Executor core.Executor            `json:"executor"`
+	Pool     core.Mempool             `json:"pool"`
 }
 
 // Coordinator serializes host operations with a cancellation-aware gate. Backends
@@ -25,11 +24,14 @@ type Coordinator struct {
 }
 
 func NewCoordinator(d CoordinatorDeps) (*Coordinator, error) {
-	if d.Protocol == nil || d.Builder == nil || d.Chain == nil || d.States == nil || d.Executor == nil || d.Committer == nil || d.Pool == nil {
+	if d.Protocol == nil || d.Builder == nil || d.Ledger == nil || d.Executor == nil || d.Pool == nil {
 		return nil, fmt.Errorf("node: all protocol-bound dependencies required")
 	}
-	if err := core.RequireCompatible(d.Protocol.Protocol(), d.Builder, d.Chain, d.States, d.Executor, d.Committer, d.Pool); err != nil {
+	if err := core.RequireCompatible(d.Protocol.Protocol(), d.Builder, d.Ledger, d.Executor, d.Pool); err != nil {
 		return nil, err
+	}
+	if d.Ledger.LedgerID() == nil || d.Builder.LedgerID() != d.Ledger.LedgerID() {
+		return nil, core.ErrLedgerMismatch
 	}
 	return &Coordinator{gate: make(chan struct{}, 1), deps: d}, nil
 }
@@ -64,7 +66,7 @@ func (c *Coordinator) freeze(b core.Block) (core.Block, error) {
 	return copy, nil
 }
 func (c *Coordinator) Propose(ctx context.Context) (core.Block, error) {
-	head, err := c.deps.Chain.Head(ctx)
+	head, err := c.deps.Ledger.Head(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -79,15 +81,18 @@ func (c *Coordinator) execute(ctx context.Context, b core.Block) (core.Execution
 	if err := ctx.Err(); err != nil {
 		return fail(err)
 	}
-	head, err := c.deps.Chain.Head(ctx)
+	head, err := c.deps.Ledger.Head(ctx)
 	if err != nil {
 		return fail(err)
 	}
-	parent, err := c.deps.Chain.Block(ctx, head)
+	parent, err := c.deps.Ledger.Block(ctx, head)
 	if err != nil {
 		return fail(err)
 	}
-	state, err := c.deps.States.Snapshot(ctx, head)
+	if err := c.deps.Protocol.ValidateCandidate(ctx, c.deps.Ledger, parent, b); err != nil {
+		return fail(err)
+	}
+	state, err := c.deps.Ledger.Snapshot(ctx, head)
 	if err != nil {
 		return fail(err)
 	}
@@ -103,7 +108,7 @@ func (c *Coordinator) execute(ctx context.Context, b core.Block) (core.Execution
 		return fail(core.ErrConflict)
 	}
 	result.BlockID = b.ID()
-	if err := c.deps.Protocol.ValidateBlock(ctx, c.deps.Chain, parent, b, result); err != nil {
+	if err := c.deps.Protocol.ValidateBlock(ctx, c.deps.Ledger, parent, b, result); err != nil {
 		return fail(err)
 	}
 	return result, nil
@@ -147,11 +152,17 @@ func (c *Coordinator) Commit(ctx context.Context, b core.Block) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := c.deps.Committer.Commit(ctx, result.Parent, copy, result); err != nil {
+	if err := c.deps.Ledger.Commit(ctx, result.Parent, copy, result); err != nil {
 		return err
 	}
-	if err := c.deps.Pool.Remove(ctx, ids); err != nil {
-		return fmt.Errorf("block committed; pool cleanup: %w", err)
+	// A durable commit is irreversible; finish local maintenance even when the
+	// request is canceled, with a separate bounded cleanup budget.
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if err := c.deps.Pool.Remove(cleanupCtx, ids); err != nil {
+		return &core.CommittedError{BlockID: copy.ID(), Cause: err}
 	}
 	return nil
 }
+
+func (c *Coordinator) LedgerID() *core.LedgerIdentity { return c.deps.Ledger.LedgerID() }

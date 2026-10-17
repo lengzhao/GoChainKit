@@ -1,8 +1,9 @@
-// Package basic assembles candidates without prescribing a block format.
+// Package builder assembles candidates through protocol and selection policies.
 package builder
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/pluginkit"
@@ -12,11 +13,11 @@ type BasicConfig struct {
 	MaxTransactionBytes int `json:"maxTransactionBytes"`
 }
 type Deps struct {
-	Protocol core.Protocol   `json:"protocol"`
-	Pool     core.Mempool    `json:"pool"`
-	Chain    core.ChainStore `json:"chain"`
-	States   core.StateStore `json:"states"`
-	Executor core.Executor   `json:"executor"`
+	Protocol core.BuilderProtocol     `json:"protocol"`
+	Pool     core.Mempool             `json:"pool"`
+	Ledger   core.LedgerReader        `json:"ledger"`
+	Executor core.Executor            `json:"executor"`
+	Selector core.TransactionSelector `json:"selector"`
 }
 type builder struct {
 	cfg  BasicConfig
@@ -25,35 +26,45 @@ type builder struct {
 
 func init() { pluginkit.Register("builder/basic", NewBasic) }
 func NewBasic(cfg BasicConfig, d Deps) (core.BlockBuilder, error) {
-	if cfg.MaxTransactionBytes <= 0 || d.Protocol == nil || d.Pool == nil || d.Chain == nil || d.States == nil || d.Executor == nil {
-		return nil, fmt.Errorf("builder/basic: protocol, dependencies and positive budget required")
+	if cfg.MaxTransactionBytes <= 0 || d.Protocol == nil || d.Pool == nil || d.Ledger == nil || d.Executor == nil || d.Selector == nil {
+		return nil, fmt.Errorf("builder/basic: dependencies and positive budget required")
 	}
-	if err := core.RequireCompatible(d.Protocol.Protocol(), d.Pool, d.Chain, d.States, d.Executor); err != nil {
+	if d.Ledger.LedgerID() == nil {
+		return nil, core.ErrLedgerMismatch
+	}
+	if err := core.RequireCompatible(d.Protocol.Protocol(), d.Pool, d.Ledger, d.Executor, d.Selector); err != nil {
 		return nil, err
 	}
 	return &builder{cfg, d}, nil
 }
 func (b *builder) Protocol() core.ProtocolDescriptor { return b.deps.Protocol.Protocol() }
+func (b *builder) LedgerID() *core.LedgerIdentity    { return b.deps.Ledger.LedgerID() }
 func (b *builder) Build(ctx context.Context, head core.ID) (core.Block, core.ExecutionResult, error) {
-	fail := func(err error) (core.Block, core.ExecutionResult, error) {
-		return nil, core.ExecutionResult{}, err
-	}
+	fail := func(err error) (core.Block, core.ExecutionResult, error) { return nil, core.ExecutionResult{}, err }
 	if err := ctx.Err(); err != nil {
 		return fail(err)
 	}
-	parent, err := b.deps.Chain.Block(ctx, head)
+	parent, err := b.deps.Ledger.Block(ctx, head)
 	if err != nil {
 		return fail(err)
 	}
 	if parent == nil || parent.ID() != head {
 		return fail(fmt.Errorf("invalid parent identity"))
 	}
-	txs, err := b.deps.Pool.Select(ctx, b.cfg.MaxTransactionBytes)
+	candidates, err := b.deps.Pool.Candidates(ctx)
 	if err != nil {
 		return fail(err)
 	}
+	selected, err := b.deps.Selector.Select(ctx, candidates, b.cfg.MaxTransactionBytes)
+	if err != nil {
+		return fail(err)
+	}
+	txs := make([]core.Transaction, len(selected))
 	budget := b.cfg.MaxTransactionBytes
-	for i, t := range txs {
+	for i, t := range selected {
+		if t == nil || t.ID() == "" {
+			return fail(core.ErrInvalidTransaction)
+		}
 		if err := b.deps.Protocol.ValidateTransaction(ctx, t); err != nil {
 			return fail(fmt.Errorf("%w: %v", core.ErrInvalidTransaction, err))
 		}
@@ -69,39 +80,69 @@ func (b *builder) Build(ctx context.Context, head core.ID) (core.Block, core.Exe
 		if err != nil {
 			return fail(err)
 		}
+		if txs[i] == nil || txs[i].ID() != t.ID() {
+			return fail(fmt.Errorf("codec changed transaction identity"))
+		}
 	}
-	draft, err := b.deps.Protocol.Draft(ctx, parent, txs)
-	if err != nil {
-		return fail(err)
+	// Each retry removes exactly one candidate from this proposal. Deferred items
+	// remain in the pool; rejected items are evicted. Work is bounded by candidates+1.
+	for {
+		if err := ctx.Err(); err != nil {
+			return fail(err)
+		}
+		draft, err := b.deps.Protocol.Draft(ctx, parent, txs)
+		if err != nil {
+			return fail(err)
+		}
+		snapshot, err := b.deps.Ledger.Snapshot(ctx, head)
+		if err != nil {
+			return fail(err)
+		}
+		result, runErr := b.deps.Executor.Execute(ctx, snapshot, draft)
+		closeErr := snapshot.Close()
+		if closeErr != nil {
+			return fail(fmt.Errorf("close execution snapshot: %w", closeErr))
+		}
+		if runErr != nil {
+			var disposition *core.TransactionError
+			if !errors.As(runErr, &disposition) || disposition == nil || (disposition.Disposition != core.TransactionRejected && disposition.Disposition != core.TransactionDeferred) {
+				return fail(runErr)
+			}
+			index := -1
+			for i, t := range txs {
+				if t.ID() == disposition.TransactionID {
+					index = i
+					break
+				}
+			}
+			if index < 0 {
+				return fail(fmt.Errorf("executor disposition references absent candidate: %w", runErr))
+			}
+			if disposition.Disposition == core.TransactionRejected {
+				if err := b.deps.Pool.Remove(ctx, []core.ID{disposition.TransactionID}); err != nil {
+					return fail(err)
+				}
+			}
+			txs = append(txs[:index], txs[index+1:]...)
+			continue
+		}
+		if result.Parent != head {
+			return fail(fmt.Errorf("execution parent mismatch"))
+		}
+		block, err := b.deps.Protocol.Finalize(ctx, draft, result)
+		if err != nil {
+			return fail(err)
+		}
+		if block == nil || block.ID() == "" {
+			return fail(fmt.Errorf("empty block identity"))
+		}
+		result.BlockID = block.ID()
+		if err := b.deps.Protocol.ValidateBlock(ctx, b.deps.Ledger, parent, block, result); err != nil {
+			return fail(err)
+		}
+		if err := ctx.Err(); err != nil {
+			return fail(err)
+		}
+		return block, result, nil
 	}
-	snapshot, err := b.deps.States.Snapshot(ctx, head)
-	if err != nil {
-		return fail(err)
-	}
-	result, runErr := b.deps.Executor.Execute(ctx, snapshot, draft)
-	closeErr := snapshot.Close()
-	if runErr != nil {
-		return fail(runErr)
-	}
-	if closeErr != nil {
-		return fail(closeErr)
-	}
-	if result.Parent != head {
-		return fail(fmt.Errorf("execution parent mismatch"))
-	}
-	block, err := b.deps.Protocol.Finalize(ctx, draft, result)
-	if err != nil {
-		return fail(err)
-	}
-	if block == nil || block.ID() == "" {
-		return fail(fmt.Errorf("empty block identity"))
-	}
-	result.BlockID = block.ID()
-	if err := b.deps.Protocol.ValidateBlock(ctx, b.deps.Chain, parent, block, result); err != nil {
-		return fail(err)
-	}
-	if err := ctx.Err(); err != nil {
-		return fail(err)
-	}
-	return block, result, nil
 }

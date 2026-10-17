@@ -1,6 +1,6 @@
 # 模块与协议接口
 
-GoChainKit 的通用组件依赖接口与协议能力，不规定具体区块头、交易字段、签名算法、ID 长度或状态承诺算法。当前公共定义见 core.go。
+GoChainKit 的通用组件依赖接口与协议能力，不规定具体区块头、交易字段、签名算法、ID 长度或状态承诺算法。当前公共定义见 core/contracts.go。
 
 ## 对象与标识
 
@@ -23,6 +23,7 @@ Protocol 由一组较小能力组成，开发者可以组合实现：
 - TransactionValidator：无状态准入检查；状态相关验证仍属于 Executor。
 - BlockCodec：区块编码、解码与交易提取。
 - BlockFactory：创世、草稿和根据执行结果定稿。
+- CandidateValidator：执行前核对候选绑定当前 canonical cursor，旧候选返回 ErrConflict；格式错误不能伪装成链头冲突。
 - BlockValidator：验证具体协议的引用关系、执行绑定和承诺；可以查询 ChainStore 检查额外引用。
 - StateCommitter：计算具体协议的状态承诺。
 - ProtocolBound：返回协议名称、版本、网络描述符。
@@ -34,10 +35,10 @@ ProtocolDescriptor 用于拒绝显然不匹配的依赖组合，不替代协议�
 ## 构块 执行与提交
 
 1. Mempool 通过协议验证和编码交易，保存独立字节副本，按编码长度限制容量。
-2. BlockBuilder 读取当前 head 对应对象，经协议 Draft 生成候选，不能直接填写某个默认区块头。
+2. TransactionSelector 从 Mempool.Candidates 的副本中按预算选择；BlockBuilder 读取当前 head 对应对象，经协议 Draft 生成候选，不能直接填写某个默认区块头。
 3. Executor 在隔离 StateReader 上运行草稿，返回通用 Writes、收据载荷和状态承诺；Parent 绑定本次读取的 canonical cursor，BlockID 绑定草稿 ID。
 4. 协议 Finalize 将执行结果纳入具体格式。构块器把 ExecutionResult.BlockID 重新绑定为最终区块 ID，再验证提议。
-5. Coordinator 在提交前重新执行和验证，不信任缓存执行结果。
+5. Coordinator 先调用 ValidateCandidate，再重新执行和验证，不信任缓存执行结果。
 6. 存储核对写入集对应的状态承诺与协议验证结果，在原子重查 head 后一起保存数据，成功后交易池才移除交易。
 
 ExecutionResult 中的 Parent 是执行基线，不是要求具体区块只能有一个父引用。自定义协议可以保存额外引用并在 ValidateBlock 中检查。
@@ -67,3 +68,13 @@ internal/testprotocol 提供测试样例：自定义 Label/Body 交易，无签�
 默认存储提供单一 canonical cursor，状态为键值快照和写入集；多头链、删除语义、特殊状态树或其他共识算法可能需要扩展能力或替换相应插件。自定义区块格式不等于已经实现 GOVM 的多链协议，也不意味着任意共识算法可以互换。
 
 这些边界属于当前具体组件能力，不应通过给所有交易、区块添加默认字段来解决。
+
+## 依赖与错误契约
+
+消费者使用 TransactionProtocol、BuilderProtocol、ExecutionProtocol、CoordinatorProtocol 与 LedgerProtocol 能力组合。默认协议可一次实现全部能力；不同消费者无需依赖完整 Protocol。
+
+Ledger 汇总读、状态与原子提交能力；LedgerIdentity 是进程内账本 owner，不是协议或网络身份。构块器、协调器与根节点必须绑定同一 owner，相同协议的不同账本不能混装。存储内部在写事务中重查 head，前置校验不能替代 CAS。
+
+TransactionError 必须指明当前候选中的交易 ID 和 Rejected/Deferred。构块器有限次重建候选，Rejected 驱逐、Deferred 本轮跳过但保留；无效错误分类或内部错误直接上报。单节点共识对 ErrNoProposal、ErrConflict 重试；CommittedError 表示已提交、清理失败，不能作为未提交重试。
+
+交易选择是独立子插件；状态树、虚拟机、网络与分布式共识保留替换方向，当前没有对应生产实现。

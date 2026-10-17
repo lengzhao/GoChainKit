@@ -84,8 +84,52 @@ type BlockFactory interface {
 type BlockValidator interface {
 	ValidateBlock(context.Context, ChainStore, Block, Block, ExecutionResult) error
 }
+
+// CandidateValidator checks execution-independent candidate binding before state
+// execution. A candidate anchored to a different canonical parent returns
+// ErrConflict. Malformed candidates and other protocol violations remain their
+// own errors. No execution-result commitment is checked here; ValidateBlock
+// remains mandatory after execution and storage still atomically rechecks head.
+type CandidateValidator interface {
+	ValidateCandidate(context.Context, ChainStore, Block, Block) error
+}
 type StateCommitter interface {
 	StateCommitment(context.Context, map[string][]byte) (Commitment, error)
+}
+
+// Consumer-specific capability sets keep pure codecs reusable without exposing
+// unrelated construction, validation or execution services to every component.
+type TransactionProtocol interface {
+	ProtocolBound
+	TransactionCodec
+	TransactionValidator
+}
+type BuilderProtocol interface {
+	TransactionProtocol
+	BlockCodec
+	BlockFactory
+	BlockValidator
+}
+type ExecutionProtocol interface {
+	ProtocolBound
+	StateCommitter
+}
+type CoordinatorProtocol interface {
+	CandidateValidator
+	ProtocolBound
+	BlockCodec
+	BlockValidator
+}
+type GenesisProvider interface {
+	Genesis(context.Context) (Block, map[string][]byte, error)
+}
+type LedgerProtocol interface {
+	ProtocolBound
+	TransactionCodec
+	BlockCodec
+	GenesisProvider
+	BlockValidator
+	StateCommitter
 }
 
 // Protocol owns format and semantics for a chain instance. Draft and Finalize
@@ -95,6 +139,7 @@ type StateCommitter interface {
 // Execute binds BlockID to the draft; Finalize returns the sealed block, and the
 // builder then rebinds BlockID to its final ID before validation and persistence.
 type Protocol interface {
+	CandidateValidator
 	ProtocolBound
 	TransactionCodec
 	TransactionValidator
@@ -105,28 +150,74 @@ type Protocol interface {
 }
 
 var (
-	ErrFull               = errors.New("capacity exceeded")
-	ErrConflict           = errors.New("parent head conflict")
-	ErrAlreadyCommitted   = errors.New("already committed")
-	ErrClosed             = errors.New("component closed")
-	ErrNotFound           = errors.New("not found")
-	ErrInvalidTransaction = errors.New("invalid transaction")
-	ErrCommitUnknown      = errors.New("commit outcome unknown; query head")
+	ErrFull                = errors.New("capacity exceeded")
+	ErrConflict            = errors.New("parent head conflict")
+	ErrAlreadyCommitted    = errors.New("already committed")
+	ErrClosed              = errors.New("component closed")
+	ErrNotFound            = errors.New("not found")
+	ErrInvalidTransaction  = errors.New("invalid transaction")
+	ErrCommitUnknown       = errors.New("commit outcome unknown; query head")
+	ErrLedgerMismatch      = errors.New("ledger instance mismatch")
+	ErrNoProposal          = errors.New("no proposal currently available")
+	ErrDeferredTransaction = errors.New("transaction temporarily not executable")
 )
+
+type TransactionDisposition uint8
+
+const (
+	TransactionRejected TransactionDisposition = iota + 1
+	TransactionDeferred
+)
+
+// TransactionError identifies the exact candidate and its protocol-defined
+// disposition. Unknown/internal executor failures must not use this type.
+type TransactionError struct {
+	TransactionID ID
+	Disposition   TransactionDisposition
+	Cause         error
+}
+
+func (e *TransactionError) Error() string {
+	return fmt.Sprintf("transaction disposition %d: %v", e.Disposition, e.Cause)
+}
+func (e *TransactionError) Unwrap() error { return e.Cause }
+func (e *TransactionError) Is(target error) bool {
+	return target == ErrInvalidTransaction && e.Disposition == TransactionRejected || target == ErrDeferredTransaction && e.Disposition == TransactionDeferred
+}
+
+// CommittedError reports a completed durable commit followed by maintenance
+// failure. Retrying the transaction blindly is incorrect; query BlockID instead.
+type CommittedError struct {
+	BlockID ID
+	Cause   error
+}
+
+func (e *CommittedError) Error() string {
+	return fmt.Sprintf("block committed; maintenance failed: %v", e.Cause)
+}
+func (e *CommittedError) Unwrap() error { return e.Cause }
 
 type Lifecycle interface {
 	Start(context.Context) error
 	Stop(context.Context) error
 }
-type Node interface{ Lifecycle }
+
+// Node owns the runtime. Run blocks, supervises workers and releases resources;
+// normal cancellation is a graceful stop, not an unobserved background failure.
+type Node interface{ Run(context.Context) error }
 
 // Mempool owns encoded/decoded copies, is concurrency-safe and non-destructive
-// on Select. Admission order is preserved among items fitting the byte budget.
+// on Candidates. Selection and byte budgeting belong to TransactionSelector.
 type Mempool interface {
 	ProtocolBound
 	Add(context.Context, Transaction) error
-	Select(context.Context, int) ([]Transaction, error)
+	Candidates(context.Context) ([]Transaction, error)
 	Remove(context.Context, []ID) error
+}
+
+type TransactionSelector interface {
+	ProtocolBound
+	Select(context.Context, []Transaction, int) ([]Transaction, error)
 }
 
 // StateReader is an immutable isolated snapshot. Reads return owned bytes/maps.
@@ -164,8 +255,30 @@ type TransactionStore interface {
 	ProtocolBound
 	Transaction(context.Context, ID) (ConfirmedTransaction, error)
 }
+
+// LedgerIdentity is an in-process owner token, distinct from protocol/network
+// identity. Every read view and committer for one backend share this token.
+type LedgerIdentity struct{ marker byte }
+
+func NewLedgerIdentity() *LedgerIdentity { return &LedgerIdentity{} }
+
+type LedgerBound interface{ LedgerID() *LedgerIdentity }
+type LedgerReader interface {
+	ChainStore
+	StateStore
+	LedgerBound
+}
+
+// Ledger keeps the atomic transaction owner whole while consumers use read-only
+// views. Protocol equality alone does not imply that two instances share data.
+type Ledger interface {
+	LedgerReader
+	TransactionStore
+	Committer
+}
 type BlockBuilder interface {
 	ProtocolBound
+	LedgerBound
 	Build(context.Context, ID) (Block, ExecutionResult, error)
 }
 type ConsensusHost interface {
@@ -186,9 +299,4 @@ type Message struct {
 type Transport interface {
 	Run(context.Context, func(context.Context, Message) error) error
 	Broadcast(context.Context, Message) error
-}
-type API interface{ Lifecycle }
-type Hasher interface{ Hash([]byte) (ID, error) }
-type Verifier interface {
-	Verify(publicKey, message, signature []byte) error
 }

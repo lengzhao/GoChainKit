@@ -1,0 +1,34 @@
+# Development-only single-node chain. Relative database paths use the process cwd.
+root: node
+plugins:
+  protocol:
+    use: protocol/kv
+    config: {chainID: dev}
+  ledger:
+    use: storage/bolt
+    config: {path: data/chain.db}
+    deps: {protocol: protocol}
+  pool:
+    use: mempool/memory
+    config: {maxTransactions: 1000, maxBytes: 16777216}
+    deps: {protocol: protocol}
+  executor:
+    use: executor/kv
+    deps: {protocol: protocol}
+  selector:
+    use: selector/fifo
+    deps: {protocol: protocol}
+  builder:
+    use: builder/basic
+    config: {maxTransactionBytes: 1048576}
+    deps: {protocol: protocol, ledger: ledger, pool: pool, executor: executor, selector: selector}
+  host:
+    use: node/coordinator
+    deps: {protocol: protocol, ledger: ledger, builder: builder, executor: executor, pool: pool}
+  consensus:
+    use: consensus/single
+    config: {interval: 1s}
+  node:
+    use: node/default
+    config: {shutdownTimeout: 5s}
+    deps: {ledger: ledger, host: host, consensus: consensus}

@@ -27,11 +27,7 @@ func TestCapacitySelectionAndOwnership(t *testing.T) {
 	if err := p.Add(ctx, testprotocol.Tx{Label: "b"}); !errors.Is(err, core.ErrFull) {
 		t.Fatal(err)
 	}
-	small, err := p.Select(ctx, 1)
-	if err != nil || len(small) != 0 {
-		t.Fatal("ignored budget", err)
-	}
-	got, err := p.Select(ctx, 4096)
+	got, err := p.Candidates(ctx)
 	if err != nil || len(got) != 1 {
 		t.Fatal(err)
 	}
@@ -40,7 +36,7 @@ func TestCapacitySelectionAndOwnership(t *testing.T) {
 		t.Fatal("retained caller data")
 	}
 	v.Body[0] = 'x'
-	got, err = p.Select(ctx, 4096)
+	got, err = p.Candidates(ctx)
 	if err != nil || string(got[0].(testprotocol.Tx).Body) != "value" {
 		t.Fatal("leaked internal data", err)
 	}
@@ -86,7 +82,7 @@ func TestConcurrentPoolAccess(t *testing.T) {
 				if err := p.Add(ctx, tx); err != nil {
 					t.Error(err)
 				}
-				if _, err := p.Select(ctx, 4096); err != nil {
+				if _, err := p.Candidates(ctx); err != nil {
 					t.Error(err)
 				}
 				if err := p.Remove(ctx, []core.ID{tx.ID()}); err != nil {

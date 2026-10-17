@@ -17,7 +17,7 @@ func (snapshot) Close() error                                       { return nil
 func TestExecuteFinalize(t *testing.T) {
 	ctx := context.Background()
 	p, _ := protocol.New(protocol.Config{ChainID: "test"})
-	e, err := NewKV(KVConfig{ChainID: "test"}, Deps{Protocol: p})
+	e, err := NewKV(KVConfig{}, Deps{Protocol: p})
 	if err != nil {
 		t.Fatal(err)
 	}

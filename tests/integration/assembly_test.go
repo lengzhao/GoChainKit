@@ -10,6 +10,7 @@ import (
 	_ "github.com/lengzhao/GoChainKit/plugins/mempool"
 	_ "github.com/lengzhao/GoChainKit/plugins/node"
 	_ "github.com/lengzhao/GoChainKit/plugins/protocol"
+	_ "github.com/lengzhao/GoChainKit/plugins/selector"
 	_ "github.com/lengzhao/GoChainKit/plugins/storage"
 	"github.com/lengzhao/GoChainKit/protocol/kv"
 	"github.com/lengzhao/pluginkit"
@@ -29,13 +30,13 @@ func init() {
 }
 func productionGraph(store config.PluginUse, custom bool) map[string]any {
 	protocol := config.PluginUse{Use: "protocol/kv", Config: map[string]any{"chainID": "dev"}}
-	executor := config.PluginUse{Use: "executor/kv", Config: map[string]any{"chainID": "dev"}, Deps: map[string]any{"protocol": "protocol"}}
+	executor := config.PluginUse{Use: "executor/kv", Deps: map[string]any{"protocol": "protocol"}}
 	if custom {
 		protocol = config.PluginUse{Use: "protocol/integration-flex"}
 		executor = config.PluginUse{Use: "executor/integration-flex", Deps: map[string]any{"protocol": "protocol"}}
 	}
 	store.Deps = map[string]any{"protocol": "protocol"}
-	return map[string]any{"protocol": protocol, "store": store, "pool": config.PluginUse{Use: "mempool/memory", Config: map[string]any{"maxTransactions": 10, "maxBytes": 16384}, Deps: map[string]any{"protocol": "protocol"}}, "executor": executor, "builder": config.PluginUse{Use: "builder/basic", Config: map[string]any{"maxTransactionBytes": 16384}, Deps: map[string]any{"protocol": "protocol", "pool": "pool", "chain": "store", "states": "store", "executor": "executor"}}, "host": config.PluginUse{Use: "node/coordinator", Deps: map[string]any{"protocol": "protocol", "builder": "builder", "chain": "store", "states": "store", "executor": "executor", "committer": "store", "pool": "pool"}}}
+	return map[string]any{"protocol": protocol, "store": store, "pool": config.PluginUse{Use: "mempool/memory", Config: map[string]any{"maxTransactions": 10, "maxBytes": 16384}, Deps: map[string]any{"protocol": "protocol"}}, "executor": executor, "selector": config.PluginUse{Use: "selector/fifo", Deps: map[string]any{"protocol": "protocol"}}, "builder": config.PluginUse{Use: "builder/basic", Config: map[string]any{"maxTransactionBytes": 16384}, Deps: map[string]any{"protocol": "protocol", "pool": "pool", "ledger": "store", "selector": "selector", "executor": "executor"}}, "host": config.PluginUse{Use: "node/coordinator", Deps: map[string]any{"protocol": "protocol", "builder": "builder", "ledger": "store", "executor": "executor", "pool": "pool"}}}
 }
 func defaultTransaction(t *testing.T, nonce uint64) core.Transaction {
 	t.Helper()
@@ -56,7 +57,7 @@ func TestProductionGraph(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Instances) != 6 {
+	if len(result.Instances) != 7 {
 		t.Fatalf("duplicated shared dependencies: %d", len(result.Instances))
 	}
 	block, err := host.Propose(ctx)

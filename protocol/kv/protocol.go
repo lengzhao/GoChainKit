@@ -262,3 +262,28 @@ func (p *protocol) ValidateBlock(ctx context.Context, _ core.ChainStore, parent,
 	}
 	return nil
 }
+
+// ValidateCandidate checks the default chain cursor before executing transactions.
+func (p *protocol) ValidateCandidate(ctx context.Context, _ core.ChainStore, parent, b core.Block) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	pv, err := UnwrapBlock(parent)
+	if err != nil {
+		return err
+	}
+	bv, err := UnwrapBlock(b)
+	if err != nil {
+		return err
+	}
+	if pv.Header.Version != 1 || bv.Header.Version != 1 || pv.Header.ChainID != p.network || bv.Header.ChainID != p.network {
+		return fmt.Errorf("invalid candidate protocol")
+	}
+	if core.ID(string(bv.Header.Parent[:])) != parent.ID() {
+		return core.ErrConflict
+	}
+	if pv.Header.Height == math.MaxUint64 || bv.Header.Height != pv.Header.Height+1 {
+		return fmt.Errorf("invalid candidate height")
+	}
+	return nil
+}

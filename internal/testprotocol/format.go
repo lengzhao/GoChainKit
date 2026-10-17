@@ -221,3 +221,24 @@ func (e Executor) Execute(ctx context.Context, s core.StateReader, b core.Block)
 	root, err := e.P.StateCommitment(ctx, state)
 	return core.ExecutionResult{Parent: v.Ancestor, BlockID: b.ID(), Writes: writes, StateRoot: root}, err
 }
+
+func (p *Format) ValidateCandidate(ctx context.Context, _ core.ChainStore, parent, b core.Block) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	old, ok := parent.(Frame)
+	if !ok {
+		return fmt.Errorf("not a flex parent")
+	}
+	v, ok := b.(Frame)
+	if !ok {
+		return fmt.Errorf("not a flex frame")
+	}
+	if v.Ancestor != parent.ID() {
+		return core.ErrConflict
+	}
+	if old.Revision == ^uint64(0) || v.Revision != old.Revision+1 {
+		return fmt.Errorf("invalid candidate revision")
+	}
+	return nil
+}

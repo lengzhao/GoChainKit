@@ -8,7 +8,7 @@ Config 只包含 `path`，Deps 必须注入 Protocol。构造函数不打开文�
 
 链读取、状态快照与提交三个依赖必须引用同一个 storage 实例。测试 `TestPersistentProductionGraph` 提供真实 PluginKit 装配示例。
 
-当前尚无独立节点 CLI；集成测试负责装配和驱动这些模块。
+独立节点 CLI 通过 node/default 管理账本生命周期，默认配置见 presets/single.yaml；集成测试另行验证存储与恢复边界。
 
 ## 落盘结构
 

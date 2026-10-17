@@ -91,14 +91,14 @@ func candidate(t *testing.T, s *BoltStore) (core.ID, core.Block, core.ExecutionR
 		t.Fatal(err)
 	}
 	w, _ := protocol.WrapTransaction(tx)
-	draft, err := s.p.Draft(ctx, previous, []core.Transaction{w})
+	draft, err := mustProtocol("dev").Draft(ctx, previous, []core.Transaction{w})
 	if err != nil {
 		t.Fatal(err)
 	}
 	state := map[string][]byte{string([]byte{0xff, 0, 0x80}): tx.Value}
 	root, _ := s.p.StateCommitment(ctx, state)
 	r := core.ExecutionResult{Parent: parent, BlockID: draft.ID(), Writes: state, StateRoot: root, Receipts: []core.Receipt{{TransactionID: w.ID(), Data: []byte{1}}}}
-	b, err := s.p.Finalize(ctx, draft, r)
+	b, err := mustProtocol("dev").Finalize(ctx, draft, r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,5 +226,22 @@ func TestOldFormatRejected(t *testing.T) {
 	if err := next.Start(context.Background()); err == nil {
 		next.Stop(context.Background())
 		t.Fatal("accepted old format")
+	}
+}
+
+func TestBoltLedgerIdentity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "chain.db")
+	s := openStore(t, path)
+	owner := s.LedgerID()
+	if owner == nil {
+		t.Fatal("missing ledger owner")
+	}
+	if err := s.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	next := openStore(t, path)
+	defer next.Stop(context.Background())
+	if next.LedgerID() == nil || next.LedgerID() == owner {
+		t.Fatal("new backend must have distinct owner even for same database")
 	}
 }

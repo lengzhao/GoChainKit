@@ -1,4 +1,4 @@
-// Package types defines the draft GoChainKit protocol. Encoding changes require
+// Package kv defines the draft GoChainKit protocol. Encoding changes require
 // protocol review; this initial version is not a production network protocol.
 package kv
 
@@ -152,27 +152,4 @@ type Receipt struct {
 	TransactionID Hash
 	Success       bool
 	ErrorCode     string
-}
-
-// ConfirmedTransaction locates an included transaction within its committed block.
-type ConfirmedTransaction struct {
-	Transaction Transaction
-	BlockID     Hash
-	Height      uint64
-	Index       uint64
-}
-
-// ExecutionResult is an isolated proposal. Committers must validate its binding
-// to the parent and block before accepting it, and copy retained slices/maps.
-type ExecutionResult struct {
-	Parent    Hash
-	BlockID   Hash
-	Writes    map[string][]byte
-	Receipts  []Receipt
-	StateRoot Hash
-}
-type Genesis struct {
-	ChainID      string
-	Version      uint32
-	InitialState map[string][]byte
 }

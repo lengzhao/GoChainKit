@@ -74,7 +74,7 @@ func TestSingleNodeProduction(t *testing.T) {
 	if err != nil || string(value) != "world" {
 		t.Fatal("state missing", err)
 	}
-	remaining, err := p.Select(ctx, 16384)
+	remaining, err := p.Candidates(ctx)
 	if err != nil || len(remaining) != 0 {
 		t.Fatal("not removed", err)
 	}

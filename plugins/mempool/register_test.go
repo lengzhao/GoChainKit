@@ -26,7 +26,7 @@ func TestPluginKitAssembly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := other.Select(context.Background(), 4096)
+	got, err := other.Candidates(context.Background())
 	if err != nil || len(got) != 0 {
 		t.Fatal("instances share state", err)
 	}

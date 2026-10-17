@@ -11,28 +11,26 @@ import (
 	"github.com/lengzhao/pluginkit"
 )
 
-type KVConfig struct {
-	ChainID string `json:"chainID"`
-}
+type KVConfig struct{}
 type Deps struct {
-	Protocol core.Protocol `json:"protocol"`
+	Protocol core.ExecutionProtocol `json:"protocol"`
 }
 type executor struct {
 	chainID  string
-	protocol core.Protocol
+	protocol core.ExecutionProtocol
 }
 
 func (e *executor) Protocol() core.ProtocolDescriptor { return e.protocol.Protocol() }
 
 func init() { pluginkit.Register("executor/kv", NewKV) }
-func NewKV(cfg KVConfig, deps Deps) (core.Executor, error) {
-	if cfg.ChainID == "" || len(cfg.ChainID) > protocol.MaxChainIDBytes {
-		return nil, fmt.Errorf("executor/kv: chainID required")
-	}
-	if deps.Protocol == nil || deps.Protocol.Protocol() != (core.ProtocolDescriptor{Name: "kv", Version: "1", Network: cfg.ChainID}) {
+func NewKV(_ KVConfig, deps Deps) (core.Executor, error) {
+	if deps.Protocol == nil || deps.Protocol.Protocol().Name != "kv" || deps.Protocol.Protocol().Version != "1" {
 		return nil, fmt.Errorf("incompatible protocol")
 	}
-	return &executor{cfg.ChainID, deps.Protocol}, nil
+	if err := deps.Protocol.Protocol().Validate(); err != nil {
+		return nil, err
+	}
+	return &executor{deps.Protocol.Protocol().Network, deps.Protocol}, nil
 }
 
 // ValueKey namespaces application keys by sender and separates them from nonces.
@@ -78,8 +76,15 @@ func (e *executor) Execute(ctx context.Context, parent core.StateReader, candida
 			}
 			previous = binary.BigEndian.Uint64(stored)
 		}
-		if previous == ^uint64(0) || tx.Nonce != previous+1 {
-			return fail(fmt.Errorf("%w: nonce is not consecutive", core.ErrInvalidTransaction))
+		id, idErr := tx.ID()
+		if idErr != nil {
+			return fail(idErr)
+		}
+		if previous == ^uint64(0) || tx.Nonce <= previous {
+			return fail(&core.TransactionError{TransactionID: core.ID(string(id[:])), Disposition: core.TransactionRejected, Cause: fmt.Errorf("nonce already consumed")})
+		}
+		if tx.Nonce != previous+1 {
+			return fail(&core.TransactionError{TransactionID: core.ID(string(id[:])), Disposition: core.TransactionDeferred, Cause: fmt.Errorf("nonce predecessor not yet available")})
 		}
 		encoded := make([]byte, 8)
 		binary.BigEndian.PutUint64(encoded, tx.Nonce)
@@ -88,10 +93,6 @@ func (e *executor) Execute(ctx context.Context, parent core.StateReader, candida
 		state[nk] = encoded
 		writes[key] = bytes.Clone(tx.Value)
 		writes[nk] = bytes.Clone(encoded)
-		id, err := tx.ID()
-		if err != nil {
-			return fail(err)
-		}
 		receipts = append(receipts, core.Receipt{TransactionID: core.ID(string(id[:])), Data: []byte{1}})
 	}
 	if err := ctx.Err(); err != nil {
