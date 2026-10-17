@@ -33,6 +33,7 @@ go test ./tests/integration -v
 - [实现计划](docs/plans/2026-10-17-gochainkit-implementation.md)
 - [持久化存储](docs/storage.md)
 - [模块与协议接口](docs/interfaces.md)
+- [架构评估与下一步建议](docs/architecture-review.md)
 
 后续补齐独立节点启动、配置文件入口与 HTTP API，并扩展持久化压力与兼容性验证。
 
