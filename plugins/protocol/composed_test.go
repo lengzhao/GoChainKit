@@ -21,18 +21,21 @@ plugins:
     use: protocol/composed-pow
     config: {network: composition, genesisTime: 1700000000, producer: '0300000000000000000000000000000000000000000000000000000000000000'}
     deps: {model: model, rule: rule, choice: rule}
-  ledger: {use: storage/bolt, config: {path: %s}, deps: {protocol: protocol}}
+  backend: {use: backend/bolt, config: {path: %s}}
+  ledger: {use: storage/kv, deps: {protocol: protocol, backend: backend}}
   executor: {use: executor/composed, deps: {protocol: protocol, history: ledger}}
   pool: {use: mempool/memory, config: {maxTransactions: 100, maxBytes: 2097152}, deps: {protocol: protocol}}
   selector: {use: selector/fifo, deps: {protocol: protocol}}
   builder: {use: builder/basic, config: {maxTransactionBytes: 1048576}, deps: {protocol: protocol, ledger: ledger, pool: pool, selector: selector, executor: executor}}
   host: {use: node/coordinator, deps: {protocol: protocol, ledger: ledger, builder: builder, executor: executor, pool: pool}}
-  network: {use: network/libp2p, config: {identityPath: %s, listen: [/ip4/127.0.0.1/tcp/0], seeds: []}, deps: {protocol: protocol}}
+  keys: {use: keystore/memory}
+  identity: {use: identity/libp2p, config: {keyID: p2p}, deps: {store: keys}}
+  network: {use: network/libp2p, config: {listen: [/ip4/127.0.0.1/tcp/0], seeds: []}, deps: {protocol: protocol, identity: identity}}
   importer: {use: importer/branch, deps: {protocol: protocol, ledger: ledger, executor: executor, pool: pool}}
   replication: {use: sync/chain, config: {interval: 1s}, deps: {protocol: protocol, ledger: ledger, pool: pool, network: network, importer: importer}}
   consensus: {use: consensus/pow, config: {interval: 1s}, deps: {protocol: protocol, ledger: ledger, builder: builder, importer: importer, replication: replication}}
   node: {use: node/default, config: {shutdownTimeout: 5s}, deps: {ledger: ledger, host: host, consensus: consensus, resources: [network]}}
-`, model, filepath.Join(t.TempDir(), "chain.db"), filepath.Join(t.TempDir(), "peer.key"))
+`, model, filepath.Join(t.TempDir(), "chain.db"))
 			node, results, e := assembly.Load(context.Background(), strings.NewReader(cfg))
 			if e != nil {
 				t.Fatal(e)

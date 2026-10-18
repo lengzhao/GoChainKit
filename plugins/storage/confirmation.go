@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 	"github.com/lengzhao/GoChainKit/cap/query"
+	capstorage "github.com/lengzhao/GoChainKit/cap/storage"
 	"github.com/lengzhao/GoChainKit/core"
-	db "go.etcd.io/bbolt"
 )
 
 // Confirmation snapshots canonical transaction, optional receipt and head under
@@ -35,12 +35,12 @@ func (s *MemoryStore) Confirmation(ctx context.Context, id core.ID) (query.Confi
 	}
 	return out, nil
 }
-func (s *BoltStore) Confirmation(ctx context.Context, id core.ID) (query.Confirmation, error) {
+func (s *KVStore) Confirmation(ctx context.Context, id core.ID) (query.Confirmation, error) {
 	var record storedTransaction
 	var receipt core.Receipt
 	var head core.ID
 	var hasReceipt bool
-	err := s.view(ctx, func(tx *db.Tx) error {
+	err := s.view(ctx, func(tx capstorage.Reader) error {
 		if err := get(tx, "transactions", []byte(id), &record); err != nil {
 			return err
 		}
@@ -73,4 +73,4 @@ func (s *BoltStore) Confirmation(ctx context.Context, id core.ID) (query.Confirm
 }
 
 var _ query.ConfirmationReader = (*MemoryStore)(nil)
-var _ query.ConfirmationReader = (*BoltStore)(nil)
+var _ query.ConfirmationReader = (*KVStore)(nil)

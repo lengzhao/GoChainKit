@@ -4,6 +4,7 @@ import (
 	"context"
 	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
 	"github.com/lengzhao/GoChainKit/core"
+	"github.com/lengzhao/GoChainKit/internal/testbackend"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
 	"math/big"
 	"path/filepath"
@@ -32,7 +33,7 @@ func TestBranchReorg(t *testing.T) {
 			if backend == "memory" {
 				s, _ = NewMemory(MemoryConfig{}, Deps{Protocol: p})
 			} else {
-				v, _ := NewBolt(BoltConfig{path}, Deps{Protocol: p})
+				v, _ := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p})
 				if e := v.Start(ctx); e != nil {
 					t.Fatal(e)
 				}
@@ -92,8 +93,8 @@ func TestBranchReorg(t *testing.T) {
 				t.Fatal(e)
 			}
 			if backend == "bolt" {
-				s.(*BoltStore).Stop(ctx)
-				next, _ := NewBolt(BoltConfig{path}, Deps{Protocol: p})
+				s.(*KVStore).Stop(ctx)
+				next, _ := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p})
 				if e := next.Start(ctx); e != nil {
 					t.Fatal(e)
 				}

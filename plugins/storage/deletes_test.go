@@ -5,6 +5,7 @@ import (
 	"errors"
 	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
 	"github.com/lengzhao/GoChainKit/core"
+	"github.com/lengzhao/GoChainKit/internal/testbackend"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
 	"path/filepath"
 	"testing"
@@ -25,7 +26,7 @@ func TestExplicitDeletionAndEmptyValue(t *testing.T) {
 					}
 					return v
 				}
-				v, e := NewBolt(BoltConfig{Path: path}, Deps{Protocol: p})
+				v, e := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p})
 				if e != nil {
 					t.Fatal(e)
 				}
@@ -36,7 +37,7 @@ func TestExplicitDeletionAndEmptyValue(t *testing.T) {
 			}
 			s = open()
 			defer func() {
-				if v, ok := s.(*BoltStore); ok {
+				if v, ok := s.(*KVStore); ok {
 					v.Stop(ctx)
 				}
 			}()
@@ -66,7 +67,7 @@ func TestExplicitDeletionAndEmptyValue(t *testing.T) {
 				t.Fatal(e)
 			}
 			if disk {
-				s.(*BoltStore).Stop(ctx)
+				s.(*KVStore).Stop(ctx)
 				s = open()
 			}
 			head, _ := s.Head(ctx)
@@ -94,7 +95,7 @@ func TestDeletionSurvivesBranchReorgAndRecovery(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "fork.db")
 			var s chaincap.BranchLedger
 			if disk {
-				v, e := NewBolt(BoltConfig{Path: path}, Deps{Protocol: p, Policy: policy})
+				v, e := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p, Policy: policy})
 				if e != nil {
 					t.Fatal(e)
 				}
@@ -110,7 +111,7 @@ func TestDeletionSurvivesBranchReorgAndRecovery(t *testing.T) {
 				s = v
 			}
 			defer func() {
-				if v, ok := s.(*BoltStore); ok {
+				if v, ok := s.(*KVStore); ok {
 					v.Stop(ctx)
 				}
 			}()
@@ -153,8 +154,8 @@ func TestDeletionSurvivesBranchReorgAndRecovery(t *testing.T) {
 			deletedTip := build(deleted.ID(), map[string][]byte{"fork": []byte("d")}, nil)
 			final := build(deletedTip.ID(), map[string][]byte{"fork": []byte("e")}, nil)
 			if disk {
-				s.(*BoltStore).Stop(ctx)
-				v, e := NewBolt(BoltConfig{Path: path}, Deps{Protocol: p, Policy: policy})
+				s.(*KVStore).Stop(ctx)
+				v, e := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p, Policy: policy})
 				if e != nil {
 					t.Fatal(e)
 				}

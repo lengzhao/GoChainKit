@@ -29,6 +29,8 @@
 | `cap/message` | 同步/投票等消息插件：复用一个 Network handler | 契约草案，既有网络尚未改为 Router |
 | `cap/query` | API 领域服务：交易受理结果、同一视图的交易/回执/链头读取、可选历史高度索引 | 受理与确认查询已接入领域服务、内存及 Bolt；高度索引仍为可选契约 |
 | `cap/http` | 可选 HTTP 服务生命周期与路由贡献能力 | 已接入通用 HTTP 插件、节点监督及 CLI；模型路由按需装配 |
+| `cap/storage` | 命名空间 KV 事务、独立拥有的数据库句柄与后端打开器 | 通用账本消费，内存/Bolt 后端实现；不包含链规则 |
+| `cap/keystore` | 可选本地机密保存、独占创建与口令来源 | 内存/加密文件实现，libp2p 身份适配消费；不强制 Signer 导出私钥 |
 
 不保留旧扩展接口的 core/model 路径、别名或转发函数；无消费者的旧 Message/Transport 定义已删除。模型实现仍位于 `model/account`、`model/utxo`；`model/asset` 仅保留地址派生、费用编码与安全加法等算法助手。状态应用直接使用 `core.ApplyStateChanges`，cap 不包含应用算法。交易编码、磁盘格式与链规则未因此改变。
 

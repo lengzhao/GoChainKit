@@ -3,13 +3,14 @@ package storage
 import (
 	"context"
 	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
+	"github.com/lengzhao/GoChainKit/internal/testbackend"
 	"path/filepath"
 	"testing"
 
+	capstorage "github.com/lengzhao/GoChainKit/cap/storage"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
 	pow "github.com/lengzhao/GoChainKit/protocol/powkv"
-	db "go.etcd.io/bbolt"
 )
 
 // An import must not enumerate unrelated side branches or recreate canonical
@@ -18,7 +19,7 @@ func TestBranchImportTouchesOnlyRelevantRecords(t *testing.T) {
 	ctx := context.Background()
 	p, _ := pow.New(pow.Config{ChainID: "incremental"})
 	path := filepath.Join(t.TempDir(), "ledger.db")
-	s, _ := NewBolt(BoltConfig{path}, Deps{Protocol: p})
+	s, _ := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p})
 	if err := s.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -34,34 +35,38 @@ func TestBranchImportTouchesOnlyRelevantRecords(t *testing.T) {
 	}
 	b, br := powChild(t, p, s, a.ID(), 2, "next")
 	var saved []byte
-	if err := s.db.Update(func(tx *db.Tx) error {
-		bucket := tx.Bucket([]byte("branches"))
-		saved = append([]byte(nil), bucket.Get([]byte(side.ID()))...)
-		if err := bucket.Put([]byte(side.ID()), []byte("corrupt unrelated fork")); err != nil {
+	if err := s.db.Update(ctx, func(tx capstorage.Writer) error {
+		saved, _ = tx.Get("branches", []byte(side.ID()))
+		if err := tx.Put("branches", []byte(side.ID()), []byte("corrupt unrelated fork")); err != nil {
 			return err
 		}
-		return tx.Bucket([]byte("transactions")).SetSequence(77)
+		return tx.Put("transactions", []byte("namespace-preserved"), []byte("77"))
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Import(ctx, a.ID(), b, br); err != nil {
 		t.Fatalf("import consulted unrelated fork: %v", err)
 	}
-	if err := s.db.View(func(tx *db.Tx) error {
-		if got := tx.Bucket([]byte("transactions")).Sequence(); got != 77 {
-			t.Errorf("canonical bucket recreated: sequence %d", got)
+	if err := s.db.View(ctx, func(tx capstorage.Reader) error {
+		if got, _ := tx.Get("transactions", []byte("namespace-preserved")); string(got) != "77" {
+			t.Errorf("canonical namespace recreated: %q", got)
 		}
 		return nil
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.db.Update(func(tx *db.Tx) error { return tx.Bucket([]byte("branches")).Put([]byte(side.ID()), saved) }); err != nil {
+	if err := s.db.Update(ctx, func(tx capstorage.Writer) error {
+		if e := tx.Delete("transactions", []byte("namespace-preserved")); e != nil {
+			return e
+		}
+		return tx.Put("branches", []byte(side.ID()), saved)
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Stop(ctx); err != nil {
 		t.Fatal(err)
 	}
-	reopened, _ := NewBolt(BoltConfig{path}, Deps{Protocol: p})
+	reopened, _ := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p})
 	if err := reopened.Start(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +90,7 @@ func TestBranchReorgReindexesSharedTransaction(t *testing.T) {
 			if backend == "memory" {
 				s, _ = NewMemory(MemoryConfig{}, Deps{Protocol: p})
 			} else {
-				b, _ := NewBolt(BoltConfig{filepath.Join(t.TempDir(), "ledger.db")}, Deps{Protocol: p})
+				b, _ := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, filepath.Join(t.TempDir(), "ledger.db")), Protocol: p})
 				if err := b.Start(ctx); err != nil {
 					t.Fatal(err)
 				}

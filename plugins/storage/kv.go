@@ -1,34 +1,35 @@
-// Package bolt persists protocol-neutral records using synchronous transactions.
+// KVStore persists protocol-neutral records using a transactional backend.
 package storage
 
 import (
 	"bytes"
 	"context"
 	"encoding/gob"
+	"errors"
 	"fmt"
 	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
+	capstorage "github.com/lengzhao/GoChainKit/cap/storage"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/pluginkit"
-	db "go.etcd.io/bbolt"
-	"os"
-	"path/filepath"
 	"sync"
-	"time"
 )
 
 var buckets = []string{"meta", "blocks", "states", "transactions", "receipts", "roots", "results"}
 
-type BoltConfig struct {
-	Path string `json:"path"`
+type KVConfig struct{}
+type KVDeps struct {
+	Protocol core.LedgerProtocol   `json:"protocol"`
+	Policy   chaincap.BranchPolicy `json:"policy,omitempty"`
+	Backend  capstorage.Backend    `json:"backend"`
 }
 type TransactionRecord = core.ConfirmedTransaction
-type BoltStore struct {
+type KVStore struct {
 	mu          sync.RWMutex
 	owner       *core.LedgerIdentity
-	cfg         BoltConfig
+	backend     capstorage.Backend
 	p           core.LedgerProtocol
 	policy      chaincap.BranchPolicy
-	db          *db.DB
+	db          capstorage.Database
 	stopped     bool
 	starting    bool
 	startDone   chan struct{}
@@ -36,45 +37,44 @@ type BoltStore struct {
 	beforeHead  func() error
 }
 
-func init() { pluginkit.Register("storage/bolt", NewBolt) }
-func NewBolt(c BoltConfig, d Deps) (*BoltStore, error) {
-	if c.Path == "" || d.Protocol == nil {
-		return nil, fmt.Errorf("path and protocol required")
+func init() { pluginkit.Register("storage/kv", NewKV) }
+func NewKV(_ KVConfig, d KVDeps) (*KVStore, error) {
+	if d.Backend == nil || d.Protocol == nil {
+		return nil, fmt.Errorf("backend and protocol required")
 	}
 	if e := d.Protocol.Protocol().Validate(); e != nil {
 		return nil, e
 	}
-	policy, e := resolvePolicy(d)
+	policy, e := resolvePolicy(Deps{Protocol: d.Protocol, Policy: d.Policy})
 	if e != nil {
 		return nil, e
 	}
-	return &BoltStore{policy: policy, owner: core.NewLedgerIdentity(), cfg: c, p: d.Protocol}, nil
+	return &KVStore{policy: policy, owner: core.NewLedgerIdentity(), backend: d.Backend, p: d.Protocol}, nil
 }
-func (s *BoltStore) Protocol() core.ProtocolDescriptor { return s.p.Protocol() }
+func (s *KVStore) Protocol() core.ProtocolDescriptor { return s.p.Protocol() }
 func encode(v any) ([]byte, error) {
 	var b bytes.Buffer
 	e := gob.NewEncoder(&b).Encode(v)
 	return b.Bytes(), e
 }
-func put(tx *db.Tx, b string, k []byte, v any) error {
+func put(tx capstorage.Writer, b string, k []byte, v any) error {
 	data, e := encode(v)
 	if e != nil {
 		return e
 	}
-	return tx.Bucket([]byte(b)).Put(k, data)
+	return tx.Put(b, k, data)
 }
-func get(tx *db.Tx, b string, k []byte, v any) error {
-	bucket := tx.Bucket([]byte(b))
-	if bucket == nil {
-		return fmt.Errorf("missing bucket")
-	}
-	data := bucket.Get(k)
-	if data == nil {
+func get(tx capstorage.Reader, b string, k []byte, v any) error {
+	data, e := tx.Get(b, k)
+	if e == capstorage.ErrNotFound {
 		return core.ErrNotFound
+	}
+	if e != nil {
+		return e
 	}
 	return gob.NewDecoder(bytes.NewReader(data)).Decode(v)
 }
-func (s *BoltStore) Start(ctx context.Context) (err error) {
+func (s *KVStore) Start(ctx context.Context) (err error) {
 	s.mu.Lock()
 	if s.stopped {
 		s.mu.Unlock()
@@ -90,7 +90,7 @@ func (s *BoltStore) Start(ctx context.Context) (err error) {
 	s.startCancel = cancel
 	done := s.startDone
 	s.mu.Unlock()
-	var database *db.DB
+	var database capstorage.Database
 	defer func() {
 		s.mu.Lock()
 		if err == nil && (s.stopped || ctx.Err() != nil) {
@@ -121,27 +121,33 @@ func (s *BoltStore) Start(ctx context.Context) (err error) {
 			return e
 		}
 	}
-	if e = os.MkdirAll(filepath.Dir(s.cfg.Path), 0700); e != nil {
-		return e
-	}
-	database, e = db.Open(s.cfg.Path, 0600, &db.Options{Timeout: time.Second})
+	database, e = s.backend.Open(ctx)
 	if e != nil {
 		return e
 	}
-	e = database.Update(func(tx *db.Tx) error {
+	e = database.Update(ctx, func(tx capstorage.Writer) error {
 		if e := ctx.Err(); e != nil {
 			return e
 		}
-		meta := tx.Bucket([]byte("meta"))
-		if meta != nil {
-			if !bytes.Equal(meta.Get([]byte("format")), []byte("2")) {
+		if exists, e := tx.HasNamespace("meta"); e != nil {
+			return e
+		} else if exists {
+			format, e := tx.Get("meta", []byte("format"))
+			if e != nil {
+				return e
+			}
+			if !bytes.Equal(format, []byte("2")) {
 				return fmt.Errorf("unsupported storage format")
 			}
 			var stored core.ProtocolDescriptor
 			if e := get(tx, "meta", []byte("protocol"), &stored); e != nil {
 				return e
 			}
-			storedPolicy := string(meta.Get([]byte("branchPolicy")))
+			policyBytes, e := tx.Get("meta", []byte("branchPolicy"))
+			if e != nil && e != capstorage.ErrNotFound {
+				return e
+			}
+			storedPolicy := string(policyBytes)
 			expectedPolicy := ""
 			if s.policy != nil {
 				expectedPolicy = s.policy.PolicyID()
@@ -167,36 +173,42 @@ func (s *BoltStore) Start(ctx context.Context) (err error) {
 			if genesisID != g.ID || genesisRoot != g.Root || !bytes.Equal(genesisBytes, g.Block) {
 				return fmt.Errorf("database genesis mismatch")
 			}
-			if isWork != (tx.Bucket([]byte("branches")) != nil) {
+			if has, e := tx.HasNamespace("branches"); e != nil {
+				return e
+			} else if isWork != has {
 				return fmt.Errorf("database branch capability mismatch")
 			}
 			for _, b := range buckets {
-				if tx.Bucket([]byte(b)) == nil {
+				if has, e := tx.HasNamespace(b); e != nil {
+					return e
+				} else if !has {
 					return fmt.Errorf("missing bucket")
 				}
 			}
 			return nil
 		}
-		if k, _ := tx.Cursor().First(); k != nil {
+		if names, e := tx.Namespaces(); e != nil {
+			return e
+		} else if len(names) != 0 {
 			return fmt.Errorf("unrecognized database")
 		}
 		for _, b := range buckets {
-			if _, e := tx.CreateBucket([]byte(b)); e != nil {
+			if e := tx.CreateNamespace(b); e != nil {
 				return e
 			}
 		}
 		if isWork {
-			if e := tx.Bucket([]byte("meta")).Put([]byte("branchPolicy"), []byte(s.policy.PolicyID())); e != nil {
+			if e := tx.Put("meta", []byte("branchPolicy"), []byte(s.policy.PolicyID())); e != nil {
 				return e
 			}
-			if _, e := tx.CreateBucket([]byte("branches")); e != nil {
+			if e := tx.CreateNamespace("branches"); e != nil {
 				return e
 			}
 			if e := put(tx, "branches", []byte(g.ID), genesisBranch); e != nil {
 				return e
 			}
 		}
-		if e := tx.Bucket([]byte("meta")).Put([]byte("format"), []byte("2")); e != nil {
+		if e := tx.Put("meta", []byte("format"), []byte("2")); e != nil {
 			return e
 		}
 		for _, v := range []struct {
@@ -214,7 +226,7 @@ func (s *BoltStore) Start(ctx context.Context) (err error) {
 	if e != nil {
 		return e
 	}
-	reader := &BoltStore{owner: s.owner, p: s.p, policy: s.policy, db: database}
+	reader := &KVStore{owner: s.owner, p: s.p, policy: s.policy, db: database}
 	head, e := reader.Head(ctx)
 	if e == nil {
 		_, e = reader.Block(ctx, head)
@@ -232,7 +244,7 @@ func (s *BoltStore) Start(ctx context.Context) (err error) {
 	}
 	if e == nil && head != g.ID {
 		var result core.ExecutionResult
-		e = reader.view(ctx, func(tx *db.Tx) error { return get(tx, "results", []byte(head), &result) })
+		e = reader.view(ctx, func(tx capstorage.Reader) error { return get(tx, "results", []byte(head), &result) })
 		if e == nil {
 			var parent, block core.Block
 			parent, e = reader.Block(ctx, result.Parent)
@@ -259,7 +271,7 @@ func (s *BoltStore) Start(ctx context.Context) (err error) {
 	}
 	return e
 }
-func (s *BoltStore) Stop(ctx context.Context) error {
+func (s *KVStore) Stop(ctx context.Context) error {
 	if e := ctx.Err(); e != nil {
 		return e
 	}
@@ -284,7 +296,7 @@ func (s *BoltStore) Stop(ctx context.Context) error {
 	s.db = nil
 	return e
 }
-func (s *BoltStore) view(ctx context.Context, fn func(*db.Tx) error) error {
+func (s *KVStore) view(ctx context.Context, fn func(capstorage.Reader) error) error {
 	if e := ctx.Err(); e != nil {
 		return e
 	}
@@ -293,39 +305,39 @@ func (s *BoltStore) view(ctx context.Context, fn func(*db.Tx) error) error {
 	if s.db == nil {
 		return core.ErrClosed
 	}
-	return s.db.View(fn)
+	return s.db.View(ctx, fn)
 }
-func (s *BoltStore) Head(ctx context.Context) (core.ID, error) {
+func (s *KVStore) Head(ctx context.Context) (core.ID, error) {
 	var h core.ID
-	e := s.view(ctx, func(tx *db.Tx) error { return get(tx, "meta", []byte("head"), &h) })
+	e := s.view(ctx, func(tx capstorage.Reader) error { return get(tx, "meta", []byte("head"), &h) })
 	return h, e
 }
-func (s *BoltStore) Block(ctx context.Context, id core.ID) (core.Block, error) {
+func (s *KVStore) Block(ctx context.Context, id core.ID) (core.Block, error) {
 	var data []byte
-	e := s.view(ctx, func(tx *db.Tx) error { return get(tx, "blocks", []byte(id), &data) })
+	e := s.view(ctx, func(tx capstorage.Reader) error { return get(tx, "blocks", []byte(id), &data) })
 	if e != nil {
 		return nil, e
 	}
 	return decodeStoredBlock(s.p, data, id)
 }
-func (s *BoltStore) Receipt(ctx context.Context, id core.ID) (core.Receipt, error) {
+func (s *KVStore) Receipt(ctx context.Context, id core.ID) (core.Receipt, error) {
 	var r core.Receipt
-	e := s.view(ctx, func(tx *db.Tx) error { return get(tx, "receipts", []byte(id), &r) })
+	e := s.view(ctx, func(tx capstorage.Reader) error { return get(tx, "receipts", []byte(id), &r) })
 	return r, e
 }
-func (s *BoltStore) Transaction(ctx context.Context, id core.ID) (TransactionRecord, error) {
+func (s *KVStore) Transaction(ctx context.Context, id core.ID) (TransactionRecord, error) {
 	var r storedTransaction
-	e := s.view(ctx, func(tx *db.Tx) error { return get(tx, "transactions", []byte(id), &r) })
+	e := s.view(ctx, func(tx capstorage.Reader) error { return get(tx, "transactions", []byte(id), &r) })
 	if e != nil {
 		return TransactionRecord{}, e
 	}
 	t, e := decodeStoredTransaction(s.p, r.Data, id)
 	return TransactionRecord{Transaction: t, BlockID: r.BlockID, Index: r.Index}, e
 }
-func (s *BoltStore) Snapshot(ctx context.Context, id core.ID) (core.StateReader, error) {
+func (s *KVStore) Snapshot(ctx context.Context, id core.ID) (core.StateReader, error) {
 	var state map[string][]byte
 	var root core.Commitment
-	e := s.view(ctx, func(tx *db.Tx) error {
+	e := s.view(ctx, func(tx capstorage.Reader) error {
 		if e := get(tx, "states", []byte(id), &state); e != nil {
 			return e
 		}
@@ -343,7 +355,7 @@ func (s *BoltStore) Snapshot(ctx context.Context, id core.ID) (core.StateReader,
 	}
 	return &stateSnapshot{State: state, Commitment: root}, nil
 }
-func (s *BoltStore) Commit(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) error {
+func (s *KVStore) Commit(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) error {
 	if s.policy != nil {
 		_, e := s.importBlock(ctx, parent, b, r, true)
 		return e
@@ -356,7 +368,11 @@ func (s *BoltStore) Commit(ctx context.Context, parent core.ID, b core.Block, r 
 	if e != nil {
 		return e
 	}
-	e = s.view(ctx, func(tx *db.Tx) error { exists = tx.Bucket([]byte("blocks")).Get([]byte(b.ID())) != nil; return nil })
+	e = s.view(ctx, func(tx capstorage.Reader) error {
+		var e error
+		exists, e = hasRecord(tx, "blocks", []byte(b.ID()))
+		return e
+	})
 	if e != nil {
 		return e
 	}
@@ -375,18 +391,19 @@ func (s *BoltStore) Commit(ctx context.Context, parent core.ID, b core.Block, r 
 	if s.db == nil {
 		return core.ErrClosed
 	}
-	var callbackErr error
-	e = s.db.Update(func(tx *db.Tx) error { callbackErr = s.commit(ctx, tx, parent, v); return callbackErr })
-	if e != nil && callbackErr == nil {
-		return fmt.Errorf("%w: %v", core.ErrCommitUnknown, e)
+	e = s.db.Update(ctx, func(tx capstorage.Writer) error { return s.commit(ctx, tx, parent, v) })
+	if errors.Is(e, capstorage.ErrCommitUnknown) {
+		return errors.Join(core.ErrCommitUnknown, e)
 	}
 	return e
 }
-func (s *BoltStore) commit(ctx context.Context, tx *db.Tx, parent core.ID, v preparedCommit) error {
+func (s *KVStore) commit(ctx context.Context, tx capstorage.Writer, parent core.ID, v preparedCommit) error {
 	if e := ctx.Err(); e != nil {
 		return e
 	}
-	if tx.Bucket([]byte("blocks")).Get([]byte(v.ID)) != nil {
+	if exists, e := hasRecord(tx, "blocks", []byte(v.ID)); e != nil {
+		return e
+	} else if exists {
 		return core.ErrAlreadyCommitted
 	}
 	var head core.ID
@@ -397,7 +414,9 @@ func (s *BoltStore) commit(ctx context.Context, tx *db.Tx, parent core.ID, v pre
 		return core.ErrConflict
 	}
 	for id := range v.Transactions {
-		if tx.Bucket([]byte("transactions")).Get([]byte(id)) != nil {
+		if exists, e := hasRecord(tx, "transactions", []byte(id)); e != nil {
+			return e
+		} else if exists {
 			return fmt.Errorf("transaction already confirmed")
 		}
 	}
@@ -430,6 +449,14 @@ func (s *BoltStore) commit(ctx context.Context, tx *db.Tx, parent core.ID, v pre
 	return put(tx, "meta", []byte("head"), v.ID)
 }
 
-func (s *BoltStore) LedgerID() *core.LedgerIdentity { return s.owner }
+func (s *KVStore) LedgerID() *core.LedgerIdentity { return s.owner }
 
-var _ core.Ledger = (*BoltStore)(nil)
+var _ core.Ledger = (*KVStore)(nil)
+
+func hasRecord(tx capstorage.Reader, n string, k []byte) (bool, error) {
+	_, e := tx.Get(n, k)
+	if e == capstorage.ErrNotFound {
+		return false, nil
+	}
+	return e == nil, e
+}

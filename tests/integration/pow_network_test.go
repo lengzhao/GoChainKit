@@ -7,6 +7,9 @@ import (
 	"fmt"
 	consensuscap "github.com/lengzhao/GoChainKit/cap/consensus"
 	"github.com/lengzhao/GoChainKit/core"
+	identity "github.com/lengzhao/GoChainKit/identity/libp2p"
+	"github.com/lengzhao/GoChainKit/internal/testbackend"
+	"github.com/lengzhao/GoChainKit/keystore"
 	runtime "github.com/lengzhao/GoChainKit/node"
 	"github.com/lengzhao/GoChainKit/plugins/builder"
 	"github.com/lengzhao/GoChainKit/plugins/consensus"
@@ -24,7 +27,7 @@ import (
 )
 
 type powTestNode struct {
-	ledger  *store.BoltStore
+	ledger  *store.KVStore
 	pool    core.Mempool
 	builder core.BlockBuilder
 	network *network.Transport
@@ -37,7 +40,7 @@ func startPoWNode(t *testing.T, p consensuscap.WorkProtocol, path string) *powTe
 }
 func startPoWNodeMode(t *testing.T, p consensuscap.WorkProtocol, path string, mining bool) *powTestNode {
 	t.Helper()
-	s, e := store.NewBolt(store.BoltConfig{Path: filepath.Join(path, "chain.db")}, store.Deps{Protocol: p})
+	s, e := store.NewKV(store.KVConfig{}, store.KVDeps{Backend: testbackend.Bolt(t, filepath.Join(path, "chain.db")), Protocol: p})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -56,7 +59,7 @@ func startPoWNodeMode(t *testing.T, p consensuscap.WorkProtocol, path string, mi
 	if e != nil {
 		t.Fatal(e)
 	}
-	n, e := network.NewLibp2p(network.Config{IdentityPath: filepath.Join(path, "peer.key"), Listen: []string{"/ip4/127.0.0.1/tcp/0"}, Timeout: "10s"}, network.Deps{Protocol: p})
+	n, e := network.NewLibp2p(network.Config{Listen: []string{"/ip4/127.0.0.1/tcp/0"}, Timeout: "10s"}, network.Deps{Protocol: p, Identity: newPeerIdentity()})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -374,4 +377,9 @@ func TestPoWLargeTransactionRealPropagation(t *testing.T) {
 	minePoW(t, b, 1)
 	eventuallyPoW(t, func() bool { _, e := a.ledger.Transaction(ctx, tx.ID()); return e == nil })
 	assertPoWStateEqual(t, a, b)
+}
+
+func newPeerIdentity() *identity.Provider {
+	p, _ := identity.New(identity.Config{KeyID: "p2p"}, identity.Deps{Store: keystore.NewMemory()})
+	return p
 }

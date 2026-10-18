@@ -6,10 +6,11 @@ import (
 	"errors"
 	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
 	consensuscap "github.com/lengzhao/GoChainKit/cap/consensus"
+	capstorage "github.com/lengzhao/GoChainKit/cap/storage"
 	"github.com/lengzhao/GoChainKit/core"
+	"github.com/lengzhao/GoChainKit/internal/testbackend"
 	"github.com/lengzhao/GoChainKit/protocol/kv"
 	pow "github.com/lengzhao/GoChainKit/protocol/powkv"
-	db "go.etcd.io/bbolt"
 	"path/filepath"
 	"testing"
 )
@@ -69,7 +70,7 @@ func TestPoWBranchStateAndDurability(t *testing.T) {
 				}
 				s = v
 			} else {
-				v, e := NewBolt(BoltConfig{path}, Deps{Protocol: p})
+				v, e := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p})
 				if e != nil {
 					t.Fatal(e)
 				}
@@ -102,8 +103,8 @@ func TestPoWBranchStateAndDurability(t *testing.T) {
 			}
 			snap.Close()
 			if kind == "bolt" {
-				s.(*BoltStore).Stop(ctx)
-				v, _ := NewBolt(BoltConfig{path}, Deps{Protocol: p})
+				s.(*KVStore).Stop(ctx)
+				v, _ := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p})
 				if e := v.Start(ctx); e != nil {
 					t.Fatal(e)
 				}
@@ -119,7 +120,7 @@ func TestBranchRollbackAndCorruptSideRecovery(t *testing.T) {
 	ctx := context.Background()
 	p, _ := pow.New(pow.Config{ChainID: "rollback"})
 	path := filepath.Join(t.TempDir(), "pow.db")
-	s, _ := NewBolt(BoltConfig{path}, Deps{Protocol: p})
+	s, _ := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p})
 	if e := s.Start(ctx); e != nil {
 		t.Fatal(e)
 	}
@@ -139,7 +140,7 @@ func TestBranchRollbackAndCorruptSideRecovery(t *testing.T) {
 	if _, e := s.Import(ctx, g, b, br); e != nil {
 		t.Fatal(e)
 	}
-	if e := s.db.Update(func(tx *db.Tx) error {
+	if e := s.db.Update(ctx, func(tx capstorage.Writer) error {
 		var n branchNode
 		if e := get(tx, "branches", []byte(b.ID()), &n); e != nil {
 			return e
@@ -150,7 +151,7 @@ func TestBranchRollbackAndCorruptSideRecovery(t *testing.T) {
 		t.Fatal(e)
 	}
 	s.Stop(ctx)
-	next, _ := NewBolt(BoltConfig{path}, Deps{Protocol: p})
+	next, _ := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p})
 	if e := next.Start(ctx); e == nil {
 		next.Stop(ctx)
 		t.Fatal("accepted corrupt side branch")
@@ -165,19 +166,19 @@ func TestLegacyBranchIdentityCannotBeBypassed(t *testing.T) {
 	ctx := context.Background()
 	p, _ := pow.New(pow.Config{ChainID: "legacy-policy"})
 	path := filepath.Join(t.TempDir(), "legacy.db")
-	s, e := NewBolt(BoltConfig{Path: path}, Deps{Protocol: p})
+	s, e := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p})
 	if e != nil {
 		t.Fatal(e)
 	}
 	if e = s.Start(ctx); e != nil {
 		t.Fatal(e)
 	}
-	if e = s.db.Update(func(tx *db.Tx) error { return tx.Bucket([]byte("meta")).Delete([]byte("branchPolicy")) }); e != nil {
+	if e = s.db.Update(ctx, func(tx capstorage.Writer) error { return tx.Delete("meta", []byte("branchPolicy")) }); e != nil {
 		t.Fatal(e)
 	}
 	s.Stop(ctx)
 	for _, protocol := range []core.LedgerProtocol{p, ledgerOnly{p}} {
-		next, e := NewBolt(BoltConfig{Path: path}, Deps{Protocol: protocol})
+		next, e := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: protocol})
 		if e != nil {
 			t.Fatal(e)
 		}

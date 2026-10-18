@@ -3,9 +3,10 @@ package storage
 import (
 	"context"
 	"errors"
+	capstorage "github.com/lengzhao/GoChainKit/cap/storage"
 	"github.com/lengzhao/GoChainKit/core"
+	"github.com/lengzhao/GoChainKit/internal/testbackend"
 	protocol "github.com/lengzhao/GoChainKit/protocol/kv"
-	db "go.etcd.io/bbolt"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -35,7 +36,7 @@ func TestChangedGenesisRejectedAfterCommit(t *testing.T) {
 		t.Fatal(e)
 	}
 	s.Stop(ctx)
-	next, _ := NewBolt(BoltConfig{path}, Deps{Protocol: changedGenesis{mustProtocol("dev")}})
+	next, _ := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: changedGenesis{mustProtocol("dev")}})
 	if e := next.Start(ctx); e == nil {
 		next.Stop(ctx)
 		t.Fatal("accepted changed genesis with same descriptor")
@@ -77,7 +78,7 @@ func TestRecoveryNotPublished(t *testing.T) {
 			s := openStore(t, path)
 			s.Stop(ctx)
 			p := &barrierProtocol{baseProtocol: mustProtocol("dev"), entered: make(chan struct{}), release: make(chan struct{}), fail: !stop}
-			s, _ = NewBolt(BoltConfig{path}, Deps{Protocol: p})
+			s, _ = NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p})
 			done := make(chan error, 1)
 			go func() { done <- s.Start(ctx) }()
 			<-p.entered
@@ -122,11 +123,11 @@ func TestMissingGenesisMetadataRejected(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "chain.db")
 	s := openStore(t, path)
-	if e := s.db.Update(func(tx *db.Tx) error { return tx.Bucket([]byte("meta")).Delete([]byte("genesisID")) }); e != nil {
+	if e := s.db.Update(ctx, func(tx capstorage.Writer) error { return tx.Delete("meta", []byte("genesisID")) }); e != nil {
 		t.Fatal(e)
 	}
 	s.Stop(ctx)
-	s, _ = NewBolt(BoltConfig{path}, Deps{Protocol: mustProtocol("dev")})
+	s, _ = NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: mustProtocol("dev")})
 	if e := s.Start(ctx); e == nil {
 		s.Stop(ctx)
 		t.Fatal("accepted missing genesis metadata")
@@ -138,7 +139,7 @@ func TestRecoveryPublishesAfterValidation(t *testing.T) {
 	s := openStore(t, path)
 	s.Stop(ctx)
 	p := &barrierProtocol{baseProtocol: mustProtocol("dev"), entered: make(chan struct{}), release: make(chan struct{})}
-	s, _ = NewBolt(BoltConfig{path}, Deps{Protocol: p})
+	s, _ = NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p})
 	done := make(chan error, 1)
 	go func() { done <- s.Start(ctx) }()
 	<-p.entered

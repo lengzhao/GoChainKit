@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
+	_ "github.com/lengzhao/GoChainKit/plugins/backend"
 	_ "github.com/lengzhao/GoChainKit/plugins/builder"
 	_ "github.com/lengzhao/GoChainKit/plugins/executor"
 	_ "github.com/lengzhao/GoChainKit/plugins/mempool"
@@ -35,8 +36,13 @@ func productionGraph(store config.PluginUse, custom bool) map[string]any {
 		protocol = config.PluginUse{Use: "protocol/integration-flex"}
 		executor = config.PluginUse{Use: "executor/integration-flex", Deps: map[string]any{"protocol": "protocol"}}
 	}
+	backend := config.PluginUse{Use: "backend/bolt", Config: store.Config}
+	store.Config = nil
 	store.Deps = map[string]any{"protocol": "protocol"}
-	return map[string]any{"protocol": protocol, "store": store, "pool": config.PluginUse{Use: "mempool/memory", Config: map[string]any{"maxTransactions": 10, "maxBytes": 16384}, Deps: map[string]any{"protocol": "protocol"}}, "executor": executor, "selector": config.PluginUse{Use: "selector/fifo", Deps: map[string]any{"protocol": "protocol"}}, "builder": config.PluginUse{Use: "builder/basic", Config: map[string]any{"maxTransactionBytes": 16384}, Deps: map[string]any{"protocol": "protocol", "pool": "pool", "ledger": "store", "selector": "selector", "executor": "executor"}}, "host": config.PluginUse{Use: "node/coordinator", Deps: map[string]any{"protocol": "protocol", "builder": "builder", "ledger": "store", "executor": "executor", "pool": "pool"}}}
+	if store.Use == "storage/kv" {
+		store.Deps["backend"] = "backend"
+	}
+	return map[string]any{"backend": backend, "protocol": protocol, "store": store, "pool": config.PluginUse{Use: "mempool/memory", Config: map[string]any{"maxTransactions": 10, "maxBytes": 16384}, Deps: map[string]any{"protocol": "protocol"}}, "executor": executor, "selector": config.PluginUse{Use: "selector/fifo", Deps: map[string]any{"protocol": "protocol"}}, "builder": config.PluginUse{Use: "builder/basic", Config: map[string]any{"maxTransactionBytes": 16384}, Deps: map[string]any{"protocol": "protocol", "pool": "pool", "ledger": "store", "selector": "selector", "executor": "executor"}}, "host": config.PluginUse{Use: "node/coordinator", Deps: map[string]any{"protocol": "protocol", "builder": "builder", "ledger": "store", "executor": "executor", "pool": "pool"}}}
 }
 func defaultTransaction(t *testing.T, nonce uint64) core.Transaction {
 	t.Helper()
@@ -88,7 +94,7 @@ func TestPersistentProductionGraph(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
 			path := filepath.Join(t.TempDir(), "chain.db")
-			graph := productionGraph(config.PluginUse{Use: "storage/bolt", Config: map[string]any{"path": path}}, custom)
+			graph := productionGraph(config.PluginUse{Use: "storage/kv", Config: map[string]any{"path": path}}, custom)
 			var confirmed core.ID
 			var previous core.ID
 			for phase := 0; phase < 2; phase++ {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
 	"github.com/lengzhao/GoChainKit/core"
+	"github.com/lengzhao/GoChainKit/internal/testbackend"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
 	"math/big"
 	"path/filepath"
@@ -46,7 +47,7 @@ func TestNonWorkPolicyAndFinality(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "policy.db")
 			var s chaincap.BranchLedger
 			if disk {
-				v, e := NewBolt(BoltConfig{Path: path}, Deps{Protocol: p, Policy: policy})
+				v, e := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p, Policy: policy})
 				if e != nil {
 					t.Fatal(e)
 				}
@@ -93,8 +94,8 @@ func TestNonWorkPolicyAndFinality(t *testing.T) {
 				t.Fatal("reorganized across finalized block")
 			}
 			if disk {
-				s.(*BoltStore).Stop(ctx)
-				v, e := NewBolt(BoltConfig{Path: path}, Deps{Protocol: p, Policy: policy})
+				s.(*KVStore).Stop(ctx)
+				v, e := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p, Policy: policy})
 				if e != nil {
 					t.Fatal(e)
 				}
@@ -102,7 +103,7 @@ func TestNonWorkPolicyAndFinality(t *testing.T) {
 					t.Fatal(e)
 				}
 				v.Stop(ctx)
-				wrong, _ := NewBolt(BoltConfig{Path: path}, Deps{Protocol: p, Policy: heightPolicy{p: p, final: true, name: "changed"}})
+				wrong, _ := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p, Policy: heightPolicy{p: p, final: true, name: "changed"}})
 				if e := wrong.Start(ctx); e == nil {
 					wrong.Stop(ctx)
 					t.Fatal("changed policy opened database")
@@ -142,7 +143,7 @@ func TestCanonicalFinalityCannotBeForgottenAcrossSwitch(t *testing.T) {
 					}
 					return v
 				}
-				v, e := NewBolt(BoltConfig{Path: path}, Deps{Protocol: p, Policy: policy})
+				v, e := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p, Policy: policy})
 				if e != nil {
 					t.Fatal(e)
 				}
@@ -153,7 +154,7 @@ func TestCanonicalFinalityCannotBeForgottenAcrossSwitch(t *testing.T) {
 			}
 			s = open()
 			defer func() {
-				if v, ok := s.(*BoltStore); ok {
+				if v, ok := s.(*KVStore); ok {
 					v.Stop(ctx)
 				}
 			}()
@@ -185,7 +186,7 @@ func TestCanonicalFinalityCannotBeForgottenAcrossSwitch(t *testing.T) {
 				t.Fatal("candidate forgot canonical finalized ancestor")
 			}
 			if disk {
-				s.(*BoltStore).Stop(ctx)
+				s.(*KVStore).Stop(ctx)
 				s = open()
 			}
 			h := build(g, "h")

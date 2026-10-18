@@ -8,6 +8,7 @@ import (
 	"github.com/lengzhao/GoChainKit/api"
 	"github.com/lengzhao/GoChainKit/cap/query"
 	"github.com/lengzhao/GoChainKit/core"
+	"github.com/lengzhao/GoChainKit/internal/testbackend"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
 	"github.com/lengzhao/GoChainKit/plugins/mempool"
 	"github.com/lengzhao/GoChainKit/plugins/storage"
@@ -72,7 +73,7 @@ func TestAdmissionQueryRealProtocols(t *testing.T) {
 				if kind == "memory" {
 					ledger, _ = storage.NewMemory(storage.MemoryConfig{}, storage.Deps{Protocol: p})
 				} else {
-					b, err := storage.NewBolt(storage.BoltConfig{Path: filepath.Join(t.TempDir(), "api.db")}, storage.Deps{Protocol: p})
+					b, err := storage.NewKV(storage.KVConfig{}, storage.KVDeps{Backend: testbackend.Bolt(t, filepath.Join(t.TempDir(), "api.db")), Protocol: p})
 					if err != nil {
 						t.Fatal(err)
 					}

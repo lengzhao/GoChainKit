@@ -3,10 +3,11 @@ package storage
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
+	capstorage "github.com/lengzhao/GoChainKit/cap/storage"
 	"github.com/lengzhao/GoChainKit/core"
-	db "go.etcd.io/bbolt"
 	"reflect"
 )
 
@@ -323,10 +324,10 @@ func (s *MemoryStore) importBlock(ctx context.Context, parent core.ID, b core.Bl
 	}
 	return change, nil
 }
-func (s *BoltStore) Import(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) (chaincap.BranchChange, error) {
+func (s *KVStore) Import(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult) (chaincap.BranchChange, error) {
 	return s.importBlock(ctx, parent, b, r, false)
 }
-func (s *BoltStore) importBlock(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult, linear bool) (chaincap.BranchChange, error) {
+func (s *KVStore) importBlock(ctx context.Context, parent core.ID, b core.Block, r core.ExecutionResult, linear bool) (chaincap.BranchChange, error) {
 	p, ok := s.p.(chaincap.BranchProtocol)
 	if !ok || s.policy == nil {
 		return chaincap.BranchChange{}, fmt.Errorf("branch protocol and policy required")
@@ -337,7 +338,7 @@ func (s *BoltStore) importBlock(ctx context.Context, parent core.ID, b core.Bloc
 	}
 	load := func(id core.ID) (branchNode, error) {
 		var n branchNode
-		e := s.view(ctx, func(tx *db.Tx) error { return get(tx, "branches", []byte(id), &n) })
+		e := s.view(ctx, func(tx capstorage.Reader) error { return get(tx, "branches", []byte(id), &n) })
 		return n, e
 	}
 	n, plan, change, e := prepareBranchImport(ctx, p, s.policy, s, head, parent, b, r, linear, load)
@@ -349,25 +350,25 @@ func (s *BoltStore) importBlock(ctx context.Context, parent core.ID, b core.Bloc
 	if s.db == nil {
 		return change, core.ErrClosed
 	}
-	var callbackErr error
-	e = s.db.Update(func(tx *db.Tx) error { callbackErr = s.commitBranch(ctx, tx, head, n, plan); return callbackErr })
-	if e != nil && callbackErr == nil {
-		return change, fmt.Errorf("%w: %v", core.ErrCommitUnknown, e)
+	e = s.db.Update(ctx, func(tx capstorage.Writer) error { return s.commitBranch(ctx, tx, head, n, plan) })
+	if errors.Is(e, capstorage.ErrCommitUnknown) {
+		return change, errors.Join(core.ErrCommitUnknown, e)
 	}
 	return change, e
 }
-func (s *BoltStore) branchGraph(ctx context.Context) (map[core.ID]branchNode, core.ID, error) {
+func (s *KVStore) branchGraph(ctx context.Context) (map[core.ID]branchNode, core.ID, error) {
 	graph := map[core.ID]branchNode{}
 	var head core.ID
-	e := s.view(ctx, func(tx *db.Tx) error {
+	e := s.view(ctx, func(tx capstorage.Reader) error {
 		if e := get(tx, "meta", []byte("head"), &head); e != nil {
 			return e
 		}
-		bucket := tx.Bucket([]byte("branches"))
-		if bucket == nil {
+		if has, e := tx.HasNamespace("branches"); e != nil {
+			return e
+		} else if !has {
 			return fmt.Errorf("missing branch records")
 		}
-		return bucket.ForEach(func(k, v []byte) error {
+		return tx.Scan("branches", nil, func(k, v []byte) error {
 			var n branchNode
 			if e := get(tx, "branches", k, &n); e != nil {
 				return e
@@ -378,12 +379,14 @@ func (s *BoltStore) branchGraph(ctx context.Context) (map[core.ID]branchNode, co
 	})
 	return graph, head, e
 }
-func (s *BoltStore) commitBranch(ctx context.Context, tx *db.Tx, expected core.ID, n branchNode, plan branchPlan) error {
+func (s *KVStore) commitBranch(ctx context.Context, tx capstorage.Writer, expected core.ID, n branchNode, plan branchPlan) error {
 	if e := ctx.Err(); e != nil {
 		return e
 	}
 	id := n.Prepared.ID
-	if tx.Bucket([]byte("blocks")).Get([]byte(id)) != nil {
+	if exists, e := hasRecord(tx, "blocks", []byte(id)); e != nil {
+		return e
+	} else if exists {
 		return core.ErrAlreadyCommitted
 	}
 	var head core.ID
@@ -407,7 +410,7 @@ func (s *BoltStore) commitBranch(ctx context.Context, tx *db.Tx, expected core.I
 	if plan.Head != expected {
 		for _, id := range plan.Removed {
 			for _, name := range []string{"transactions", "receipts"} {
-				if e := tx.Bucket([]byte(name)).Delete([]byte(id)); e != nil {
+				if e := tx.Delete(name, []byte(id)); e != nil {
 					return e
 				}
 			}
@@ -435,7 +438,7 @@ func (s *BoltStore) commitBranch(ctx context.Context, tx *db.Tx, expected core.I
 }
 
 // validateBranches revalidates every stored fork before publishing the database.
-func (s *BoltStore) validateBranches(ctx context.Context, p chaincap.BranchProtocol, g preparedCommit) error {
+func (s *KVStore) validateBranches(ctx context.Context, p chaincap.BranchProtocol, g preparedCommit) error {
 	graph, head, e := s.branchGraph(ctx)
 	if e != nil {
 		return e
@@ -564,9 +567,9 @@ func (s *BoltStore) validateBranches(ctx context.Context, p chaincap.BranchProto
 			expectedReceipts[tx] = r
 		}
 	}
-	return s.view(ctx, func(tx *db.Tx) error {
+	return s.view(ctx, func(tx capstorage.Reader) error {
 		count := 0
-		if e := tx.Bucket([]byte("blocks")).ForEach(func(k, v []byte) error {
+		if e := tx.Scan("blocks", nil, func(k, v []byte) error {
 			if _, ok := graph[core.ID(k)]; !ok {
 				return fmt.Errorf("block absent from branch graph")
 			}
@@ -579,7 +582,7 @@ func (s *BoltStore) validateBranches(ctx context.Context, p chaincap.BranchProto
 			return fmt.Errorf("branch graph block count mismatch")
 		}
 		actualTx := map[core.ID]storedTransaction{}
-		if e := tx.Bucket([]byte("transactions")).ForEach(func(k, v []byte) error {
+		if e := tx.Scan("transactions", nil, func(k, v []byte) error {
 			var r storedTransaction
 			if e := get(tx, "transactions", k, &r); e != nil {
 				return e
@@ -590,7 +593,7 @@ func (s *BoltStore) validateBranches(ctx context.Context, p chaincap.BranchProto
 			return e
 		}
 		actualReceipts := map[core.ID]core.Receipt{}
-		if e := tx.Bucket([]byte("receipts")).ForEach(func(k, v []byte) error {
+		if e := tx.Scan("receipts", nil, func(k, v []byte) error {
 			var r core.Receipt
 			if e := get(tx, "receipts", k, &r); e != nil {
 				return e

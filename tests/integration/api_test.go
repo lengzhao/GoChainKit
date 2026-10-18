@@ -135,7 +135,7 @@ func waitConfirmed(t *testing.T, url, id string) map[string]any {
 func TestAPIProtocolSubmissionAndReopen(t *testing.T) {
 	for _, custom := range []bool{false, true} {
 		t.Run(fmt.Sprint(custom), func(t *testing.T) {
-			graph := productionGraph(config.PluginUse{Use: "storage/bolt", Config: map[string]any{"path": filepath.Join(t.TempDir(), "chain.db")}}, custom)
+			graph := productionGraph(config.PluginUse{Use: "storage/kv", Config: map[string]any{"path": filepath.Join(t.TempDir(), "chain.db")}}, custom)
 			addAPI(graph, "store")
 			url, result, stop := startAPIGraph(t, graph)
 			p, e := build.RequireByID[core.Protocol](result, "protocol", "protocol")
@@ -214,8 +214,10 @@ func TestAPIModelTransfersAndSnapshots(t *testing.T) {
 			graph := cfg.Plugins
 			plugin := func(id string) map[string]any { return graph[id].(map[string]any) }
 			dir := t.TempDir()
-			plugin("ledger")["config"] = map[string]any{"path": filepath.Join(dir, "chain.db")}
-			plugin("network")["config"] = map[string]any{"identityPath": filepath.Join(dir, "peer.key"), "listen": []string{"/ip4/127.0.0.1/tcp/0"}}
+			plugin("backend")["config"] = map[string]any{"path": filepath.Join(dir, "chain.db")}
+			t.Setenv("GOCHAINKIT_KEYSTORE_PASSWORD", "integration-only-password")
+			plugin("keys")["config"] = map[string]any{"directory": filepath.Join(dir, "keys")}
+			plugin("network")["config"] = map[string]any{"listen": []string{"/ip4/127.0.0.1/tcp/0"}}
 			plugin("api")["config"] = map[string]any{"listen": "127.0.0.1:0"}
 			plugin("consensus")["config"] = map[string]any{"interval": "20ms"}
 			network := "composed-" + name

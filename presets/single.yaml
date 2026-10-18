@@ -4,10 +4,12 @@ plugins:
   protocol:
     use: protocol/kv
     config: {chainID: dev}
-  ledger:
-    use: storage/bolt
+  backend:
+    use: backend/bolt
     config: {path: data/chain.db}
-    deps: {protocol: protocol}
+  ledger:
+    use: storage/kv
+    deps: {protocol: protocol, backend: backend}
   pool:
     use: mempool/memory
     config: {maxTransactions: 1000, maxBytes: 16777216}

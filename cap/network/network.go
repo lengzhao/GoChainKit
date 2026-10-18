@@ -16,3 +16,9 @@ type Network interface {
 	Request(context.Context, string, []byte) ([]byte, error)
 	Handle(func(context.Context, []byte) ([]byte, error)) error
 }
+
+// Libp2pIdentity supplies caller-owned serialized libp2p private key bytes.
+// This local transport capability does not require generic signers to export keys.
+type Libp2pIdentity interface {
+	PrivateKey(context.Context) ([]byte, error)
+}

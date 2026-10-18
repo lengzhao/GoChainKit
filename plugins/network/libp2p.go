@@ -3,7 +3,6 @@ package network
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
@@ -11,8 +10,6 @@ import (
 	"fmt"
 	networkcap "github.com/lengzhao/GoChainKit/cap/network"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -31,7 +28,6 @@ import (
 const wireProtocol protocol.ID = "/gochainkit/request/1"
 
 type Config struct {
-	IdentityPath    string   `json:"identityPath"`
 	Listen          []string `json:"listen"`
 	Seeds           []string `json:"seeds"`
 	MaxMessageBytes int      `json:"maxMessageBytes"`
@@ -43,11 +39,13 @@ type networkProtocol interface {
 	core.BlockCodec
 }
 type Deps struct {
-	Protocol networkProtocol `json:"protocol"`
+	Protocol networkProtocol           `json:"protocol"`
+	Identity networkcap.Libp2pIdentity `json:"identity"`
 }
 type Transport struct {
 	mu         sync.RWMutex
 	cfg        Config
+	identity   networkcap.Libp2pIdentity
 	descriptor core.ProtocolDescriptor
 	genesis    [32]byte
 	timeout    time.Duration
@@ -71,7 +69,7 @@ type envelope struct {
 
 func init() { pluginkit.Register("network/libp2p", NewLibp2p) }
 func NewLibp2p(cfg Config, d Deps) (*Transport, error) {
-	if d.Protocol == nil {
+	if d.Protocol == nil || d.Identity == nil {
 		return nil, fmt.Errorf("network: protocol required")
 	}
 	if err := d.Protocol.Protocol().Validate(); err != nil {
@@ -117,7 +115,7 @@ func NewLibp2p(cfg Config, d Deps) (*Transport, error) {
 	}
 	cfg.Listen = append([]string(nil), cfg.Listen...)
 	cfg.Seeds = append([]string(nil), cfg.Seeds...)
-	return &Transport{cfg: cfg, descriptor: d.Protocol.Protocol(), genesis: sha256.Sum256(encoded), timeout: timeout, slots: make(chan struct{}, 32), outgoing: make(chan struct{}, 32)}, nil
+	return &Transport{cfg: cfg, identity: d.Identity, descriptor: d.Protocol.Protocol(), genesis: sha256.Sum256(encoded), timeout: timeout, slots: make(chan struct{}, 32), outgoing: make(chan struct{}, 32)}, nil
 }
 func (t *Transport) Protocol() core.ProtocolDescriptor { return t.descriptor }
 func (t *Transport) Handle(fn func(context.Context, []byte) ([]byte, error)) error {
@@ -129,75 +127,6 @@ func (t *Transport) Handle(fn func(context.Context, []byte) ([]byte, error)) err
 	t.handler = fn
 	return nil
 }
-func identity(path string) (crypto.PrivKey, error) {
-	if path != "" {
-		data, err := os.ReadFile(path)
-		if err == nil {
-			return crypto.UnmarshalPrivateKey(data)
-		}
-		if !errors.Is(err, os.ErrNotExist) {
-			return nil, err
-		}
-	}
-	key, _, err := crypto.GenerateEd25519Key(rand.Reader)
-	if err != nil || path == "" {
-		return key, err
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return nil, err
-	}
-	data, err := crypto.MarshalPrivateKey(key)
-	if err != nil {
-		return nil, err
-	}
-	if err := publishIdentity(path, data); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			winner, readErr := os.ReadFile(path)
-			if readErr != nil {
-				return nil, readErr
-			}
-			return crypto.UnmarshalPrivateKey(winner)
-		}
-		return nil, err
-	}
-	return key, nil
-}
-
-// The final name is published only after a complete synced private temp file.
-// Link is exclusive: concurrent creators never replace the winning identity.
-func publishIdentity(path string, data []byte) error {
-	file, err := os.CreateTemp(filepath.Dir(path), ".identity-*")
-	if err != nil {
-		return err
-	}
-	temp := file.Name()
-	defer os.Remove(temp)
-	if err := file.Chmod(0600); err != nil {
-		file.Close()
-		return err
-	}
-	if _, err := file.Write(data); err != nil {
-		file.Close()
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		file.Close()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	if err := os.Link(temp, path); err != nil {
-		return err
-	}
-	dir, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	defer dir.Close()
-	return dir.Sync()
-
-}
 func (t *Transport) Start(ctx context.Context) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -207,7 +136,13 @@ func (t *Transport) Start(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	key, err := identity(t.cfg.IdentityPath)
+	data, err := t.identity.PrivateKey(ctx)
+	if err != nil {
+		clear(data)
+		return err
+	}
+	key, err := crypto.UnmarshalPrivateKey(data)
+	clear(data)
 	if err != nil {
 		return err
 	}

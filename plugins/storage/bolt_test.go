@@ -5,9 +5,10 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	capstorage "github.com/lengzhao/GoChainKit/cap/storage"
 	"github.com/lengzhao/GoChainKit/core"
+	"github.com/lengzhao/GoChainKit/internal/testbackend"
 	protocol "github.com/lengzhao/GoChainKit/protocol/kv"
-	db "go.etcd.io/bbolt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -75,7 +76,7 @@ func TestProcessExitDurability(t *testing.T) {
 	}
 }
 
-func candidate(t *testing.T, s *BoltStore) (core.ID, core.Block, core.ExecutionResult) {
+func candidate(t *testing.T, s *KVStore) (core.ID, core.Block, core.ExecutionResult) {
 	t.Helper()
 	ctx := context.Background()
 	parent, err := s.Head(ctx)
@@ -105,9 +106,9 @@ func candidate(t *testing.T, s *BoltStore) (core.ID, core.Block, core.ExecutionR
 	r.BlockID = b.ID()
 	return parent, b, r
 }
-func openStore(t *testing.T, path string) *BoltStore {
+func openStore(t *testing.T, path string) *KVStore {
 	t.Helper()
-	s, err := NewBolt(BoltConfig{Path: path}, Deps{Protocol: mustProtocol("dev")})
+	s, err := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: mustProtocol("dev")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +198,7 @@ func TestRollbackAndWrongChain(t *testing.T) {
 		t.Fatal("rollback not durable")
 	}
 	_ = s.Stop(ctx)
-	wrong, err := NewBolt(BoltConfig{Path: path}, Deps{Protocol: mustProtocol("other")})
+	wrong, err := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: mustProtocol("other")})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,13 +217,14 @@ func mustProtocol(network string) core.Protocol {
 }
 
 func TestOldFormatRejected(t *testing.T) {
+	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "chain.db")
 	s := openStore(t, path)
-	if err := s.db.Update(func(tx *db.Tx) error { return tx.Bucket([]byte("meta")).Put([]byte("format"), []byte("1")) }); err != nil {
+	if err := s.db.Update(ctx, func(tx capstorage.Writer) error { return tx.Put("meta", []byte("format"), []byte("1")) }); err != nil {
 		t.Fatal(err)
 	}
 	s.Stop(context.Background())
-	next, _ := NewBolt(BoltConfig{Path: path}, Deps{Protocol: mustProtocol("dev")})
+	next, _ := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, path), Protocol: mustProtocol("dev")})
 	if err := next.Start(context.Background()); err == nil {
 		next.Stop(context.Background())
 		t.Fatal("accepted old format")

@@ -19,6 +19,7 @@
 - libp2p 网络：持久身份、种子重连、有界消息及协议/创世隔离。
 - bbolt 持久化插件：区块、状态、已确认交易、回执和链头在同一事务落盘，支持重开恢复。
 - 可组合 HTTP API：协议交易受理、链/区块/确认交易/回执查询、节点信息，以及按需装配的账户与 UTXO 查询。
+- 事务型 KV 后端：通用账本通过 Deps 选择内存或 Bolt；密钥保存与网络身份独立装配，支持加密文件及环境口令来源。
 
 ## 开发
 
@@ -37,6 +38,7 @@ go test ./tests/integration -v
 - [编程与模块接口规范](docs/development-conventions.md)
 - [实现计划](docs/plans/2026-10-17-gochainkit-implementation.md)
 - [持久化存储](docs/storage.md)
+- [密钥保存与身份适配](docs/key-management.md)
 - [模块与协议接口](docs/interfaces.md)
 - [外部 API、插件装配与资源限制](docs/api.md)
 - [libp2p 与 PoW 开发网络](docs/network-consensus.md)
@@ -64,4 +66,6 @@ go run ./cmd/gochainkit --config presets/single.yaml --run-for 5s
 go run ./cmd/gochainkit --config presets/pow.yaml
 ```
 
-启动后打印可用于种子连接的完整节点地址。为其他节点复制配置，使用独立数据目录、身份文件和监听端口，并将该地址加入 network 的 seeds。设置共识配置 mining: false 可只同步不挖矿。详见 [网络操作与验证边界](docs/network-consensus.md)。
+启动后打印可用于种子连接的完整节点地址。为其他节点复制配置，使用独立数据目录、密钥保存目录和监听端口，并将该地址加入 network 的 seeds。设置共识配置 mining: false 可只同步不挖矿。详见 [网络操作与验证边界](docs/network-consensus.md)。
+
+PoW 预设使用加密身份，运行前须通过环境提供 `GOCHAINKIT_KEYSTORE_PASSWORD`；口令不写入 YAML。旧明文 identityPath 不会自动迁移，保留原 PeerID 的导入方式见 [密钥保存](docs/key-management.md)。single 配置不需要口令。

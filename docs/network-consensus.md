@@ -14,7 +14,7 @@ cap/chain.BranchLedger.Import 保存验证后的任意已知父块分支，选�
 
 ## libp2p 传输配置
 
-network/libp2p 支持 identityPath、listen、seeds、maxMessageBytes 和 timeout。正式开发配置应指定 identityPath，身份文件权限为 0600；不指定时每次生成临时身份。listen 与 seeds 使用 libp2p multiaddr，种子地址须包含对方 peer ID。
+network/libp2p 支持 listen、seeds、maxMessageBytes 和 timeout，通过 Deps 注入 Libp2pIdentity；网络本身不读写密钥文件。身份适配器使用 Store 持久化密钥，默认开发图采用加密文件与环境口令来源。未配置身份依赖会在构造时失败，不再隐式生成临时身份。listen 与 seeds 使用 libp2p multiaddr，种子地址须包含对方 peer ID。详见 [密钥保存](key-management.md)。
 
 请求协议在进入业务处理前比较协议描述符及规范创世区块的 SHA-256 指纹。不同链即使协议名称相同也不能互通。节点地址和错误消息不会代替链协议验算。
 
@@ -28,9 +28,9 @@ Network 是由根 Node resources 管理的生命周期资源；共识使用同�
 go run ./cmd/gochainkit --config presets/pow.yaml
 ```
 
-默认监听本机 19001，数据文件为 data/pow-chain.db，身份为 data/pow-peer.key。命令行启动后打印 Listening 地址，包含连接所需 peer ID。
+默认监听本机 19001，数据文件为 data/pow-chain.db。身份由 keystore 保存，启动前须通过 GOCHAINKIT_KEYSTORE_PASSWORD 环境变量提供该保存目录的口令；口令不写进 YAML。命令行启动后打印 Listening 地址，包含连接所需 peer ID。
 
-复制 preset 为第二、第三个配置；分别使用独立数据库、身份路径及监听端口，例如 19002 和 19003。把第一个节点打印的完整地址写入其他节点 network.config.seeds，种子连接会自动重试。节点必须使用相同协议配置和创世，复用旧 KV 数据库会被拒绝。
+复制 preset 为第二、第三个配置；分别使用独立数据库、密钥目录及监听端口，例如 19002 和 19003。把第一个节点打印的完整地址写入其他节点 network.config.seeds，种子连接会自动重试。节点必须使用相同协议配置和创世，复用旧 KV 数据库会被拒绝。旧明文 identityPath 不会被自动导入或覆盖；切换身份保存前先按密钥文档显式导入，或按新 PeerID 更新连接地址。
 
 consensus/pow 的 interval 控制挖矿尝试间隔，mining 默认为 true，设 false 即只监督同步服务。同步轮询由独立 sync/chain 插件的 interval 配置控制；旧 consensus.config.syncInterval 已移除。停机可使用中断信号或 CLI 的 --run-for。关闭多个矿工后用 mining: false 重启同一批数据，连接到更重链可继续追赶；同权分支需要后续工作量打破平局。
 

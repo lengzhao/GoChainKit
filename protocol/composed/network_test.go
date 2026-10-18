@@ -8,7 +8,10 @@ import (
 	assetcap "github.com/lengzhao/GoChainKit/cap/asset"
 	"github.com/lengzhao/GoChainKit/cap/model"
 	"github.com/lengzhao/GoChainKit/core"
+	identity "github.com/lengzhao/GoChainKit/identity/libp2p"
+	"github.com/lengzhao/GoChainKit/internal/testbackend"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
+	"github.com/lengzhao/GoChainKit/keystore"
 	"github.com/lengzhao/GoChainKit/model/account"
 	"github.com/lengzhao/GoChainKit/model/asset"
 	"github.com/lengzhao/GoChainKit/model/utxo"
@@ -29,7 +32,7 @@ import (
 )
 
 type composedNode struct {
-	ledger  *storage.BoltStore
+	ledger  *storage.KVStore
 	pool    core.Mempool
 	builder core.BlockBuilder
 	network *network.Transport
@@ -50,7 +53,7 @@ func eventually(t *testing.T, check func() bool) {
 }
 func startNode(t *testing.T, p *composed.WorkProtocol, path string) *composedNode {
 	t.Helper()
-	s, e := storage.NewBolt(storage.BoltConfig{Path: filepath.Join(path, "chain.db")}, storage.Deps{Protocol: p})
+	s, e := storage.NewKV(storage.KVConfig{}, storage.KVDeps{Backend: testbackend.Bolt(t, filepath.Join(path, "chain.db")), Protocol: p})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -70,7 +73,7 @@ func startNode(t *testing.T, p *composed.WorkProtocol, path string) *composedNod
 	if e != nil {
 		t.Fatal(e)
 	}
-	network, e := network.NewLibp2p(network.Config{IdentityPath: filepath.Join(path, "peer.key"), Listen: []string{"/ip4/127.0.0.1/tcp/0"}, Timeout: "3s"}, network.Deps{Protocol: p})
+	network, e := network.NewLibp2p(network.Config{Listen: []string{"/ip4/127.0.0.1/tcp/0"}, Timeout: "3s"}, network.Deps{Protocol: p, Identity: newPeerIdentity()})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -222,4 +225,9 @@ func TestComposedAccountUTXORealNetworkAndRestart(t *testing.T) {
 			}
 		})
 	}
+}
+
+func newPeerIdentity() *identity.Provider {
+	p, _ := identity.New(identity.Config{KeyID: "p2p"}, identity.Deps{Store: keystore.NewMemory()})
+	return p
 }

@@ -4,10 +4,12 @@ plugins:
   protocol:
     use: protocol/powkv
     config: {chainID: dev}
-  ledger:
-    use: storage/bolt
+  backend:
+    use: backend/bolt
     config: {path: data/pow-chain.db}
-    deps: {protocol: protocol}
+  ledger:
+    use: storage/kv
+    deps: {protocol: protocol, backend: backend}
   pool:
     use: mempool/memory
     config: {maxTransactions: 1000, maxBytes: 16777216}
@@ -31,10 +33,13 @@ plugins:
   host:
     use: node/coordinator
     deps: {protocol: protocol, ledger: ledger, builder: builder, executor: executor, pool: pool}
+  key-secret: {use: secret/env, config: {environment: GOCHAINKIT_KEYSTORE_PASSWORD}}
+  keys: {use: keystore/encrypted-file, config: {directory: data/pow-keys}, deps: {secret: key-secret}}
+  identity: {use: identity/libp2p, config: {keyID: p2p}, deps: {store: keys}}
   network:
     use: network/libp2p
-    config: {identityPath: data/pow-peer.key, listen: [/ip4/127.0.0.1/tcp/19001], seeds: []}
-    deps: {protocol: protocol}
+    config: {listen: [/ip4/127.0.0.1/tcp/19001], seeds: []}
+    deps: {protocol: protocol, identity: identity}
   importer:
     use: importer/branch
     deps: {protocol: protocol, ledger: ledger, executor: executor, pool: pool}

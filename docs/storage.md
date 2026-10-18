@@ -1,12 +1,27 @@
 # 区块 状态与交易持久化
 
-`storage/bolt` 使用 bbolt v1.4.0。一次同步写事务保存区块、完整状态快照、已确认交易索引、回执和链头；提交成功后才清理内存交易池。
+`storage/kv` 通过事务后端保存区块、完整状态快照、已确认交易索引、回执和链头；提交成功后才清理内存交易池。`backend/bolt` 使用 bbolt，`backend/memory` 提供同一后端契约的内存实现。选链、协议验证、记录编码和恢复规则属于账本，不属于数据库后端。
 
 ## 装配与生命周期
 
-Config 只包含 `path`，Deps 必须注入 Protocol。构造函数不打开文件，装配后由 owner 调用 Start，关闭时调用 Stop。数据库文件权限为 0600，新建父目录权限为 0700，同一路径被占用时有限等待后返回错误。
+账本 Deps 注入 Protocol 和 Backend，可选 BranchPolicy；路径属于 backend/bolt 的 Config。构造函数不打开文件，账本 Start 调用后端 Open，恢复校验通过后发布数据库；Stop 关闭它拥有的句柄。每次 Open 返回独立拥有的句柄，不能把打开器当作共享的数据库实例，也不需要把后端另列为根节点资源。Bolt 文件权限为 0600，新建父目录权限为 0700，同一路径被占用时有限等待后返回错误。
+
+`cap/storage` 只定义命名空间 KV 事务能力，不依赖区块、交易、签名、链头或共识。只读事务不暴露写操作，写回调失败或提交前取消会回滚；事务及命名空间句柄仅在回调期间有效。返回字节由调用方拥有，扫描按字节序确定排列。不得在事务回调内递归开启同一数据库事务或把句柄交给后台任务。
+
+既有直接内存账本 `storage/memory` 保留为独立的开发参考实现；`storage/kv + backend/memory` 用于验证通用账本能替换后端。两者职责不同，不用兼容别名把它们混为同一实现。
 
 链读取、状态快照与提交三个依赖必须引用同一个 storage 实例。测试 `TestPersistentProductionGraph` 提供真实 PluginKit 装配示例。
+
+```yaml
+backend:
+  use: backend/bolt
+  config: {path: data/chain.db}
+ledger:
+  use: storage/kv
+  deps: {protocol: protocol, backend: backend}
+```
+
+换为 `backend/memory` 不需要修改账本实现；数据只保留在本次 Open 的句柄中，关闭后不持久化。
 
 独立节点 CLI 通过 node/default 管理账本生命周期，默认配置见 presets/single.yaml；集成测试另行验证存储与恢复边界。
 

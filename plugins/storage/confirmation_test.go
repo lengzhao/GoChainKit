@@ -6,6 +6,7 @@ import (
 	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
 	"github.com/lengzhao/GoChainKit/cap/query"
 	"github.com/lengzhao/GoChainKit/core"
+	"github.com/lengzhao/GoChainKit/internal/testbackend"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
 	"path/filepath"
 	"sync"
@@ -24,7 +25,7 @@ func TestConfirmationAtomicDuringReorganization(t *testing.T) {
 			if kind == "memory" {
 				s, _ = NewMemory(MemoryConfig{}, Deps{Protocol: p})
 			} else {
-				b, _ := NewBolt(BoltConfig{Path: filepath.Join(t.TempDir(), "c.db")}, Deps{Protocol: p})
+				b, _ := NewKV(KVConfig{}, KVDeps{Backend: testbackend.Bolt(t, filepath.Join(t.TempDir(), "c.db")), Protocol: p})
 				if err := b.Start(ctx); err != nil {
 					t.Fatal(err)
 				}

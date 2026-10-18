@@ -8,6 +8,7 @@ import (
 	assetcap "github.com/lengzhao/GoChainKit/cap/asset"
 	"github.com/lengzhao/GoChainKit/cap/model"
 	"github.com/lengzhao/GoChainKit/core"
+	"github.com/lengzhao/GoChainKit/internal/testbackend"
 	"github.com/lengzhao/GoChainKit/model/account"
 	"github.com/lengzhao/GoChainKit/model/asset"
 	"github.com/lengzhao/GoChainKit/model/utxo"
@@ -70,7 +71,7 @@ func TestPoWAccountUTXOReorgRecovery(t *testing.T) {
 				t.Fatal(e)
 			}
 			path := filepath.Join(t.TempDir(), "chain.db")
-			s, e := storage.NewBolt(storage.BoltConfig{Path: path}, storage.Deps{Protocol: p})
+			s, e := storage.NewKV(storage.KVConfig{}, storage.KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p})
 			if e != nil {
 				t.Fatal(e)
 			}
@@ -158,7 +159,7 @@ func TestPoWAccountUTXOReorgRecovery(t *testing.T) {
 			if e = s.Stop(ctx); e != nil {
 				t.Fatal(e)
 			}
-			s, e = storage.NewBolt(storage.BoltConfig{Path: path}, storage.Deps{Protocol: p})
+			s, e = storage.NewKV(storage.KVConfig{}, storage.KVDeps{Backend: testbackend.Bolt(t, path), Protocol: p})
 			if e != nil {
 				t.Fatal(e)
 			}

@@ -5,9 +5,9 @@ import (
 	"context"
 	"errors"
 	"github.com/lengzhao/GoChainKit/core"
+	identity "github.com/lengzhao/GoChainKit/identity/libp2p"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
-	"github.com/libp2p/go-libp2p/core/crypto"
-	"os"
+	"github.com/lengzhao/GoChainKit/keystore"
 	"path/filepath"
 	"testing"
 	"time"
@@ -16,12 +16,17 @@ import (
 func TestLibp2pRequestIdentityAndLimits(t *testing.T) {
 	ctx := context.Background()
 	p := testprotocol.New("wire")
-	path := filepath.Join(t.TempDir(), "identity")
-	a, err := NewLibp2p(Config{IdentityPath: path, Listen: []string{"/ip4/127.0.0.1/tcp/0"}, MaxMessageBytes: 1024}, Deps{Protocol: p})
+	directory := filepath.Join(t.TempDir(), "keys")
+	store, err := keystore.NewEncryptedFile(keystore.FileConfig{Directory: directory}, testSecret{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := NewLibp2p(Config{Listen: []string{"/ip4/127.0.0.1/tcp/0"}, MaxMessageBytes: 1024}, Deps{Protocol: p})
+	provider, _ := identity.New(identity.Config{KeyID: "p2p"}, identity.Deps{Store: store})
+	a, err := NewLibp2p(Config{Listen: []string{"/ip4/127.0.0.1/tcp/0"}, MaxMessageBytes: 1024}, Deps{Protocol: p, Identity: provider})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := NewLibp2p(Config{Listen: []string{"/ip4/127.0.0.1/tcp/0"}, MaxMessageBytes: 1024}, Deps{Protocol: p, Identity: testIdentity()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +60,9 @@ func TestLibp2pRequestIdentityAndLimits(t *testing.T) {
 	if err := a.Stop(ctx); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := NewLibp2p(Config{IdentityPath: path, Listen: []string{"/ip4/127.0.0.1/tcp/0"}}, Deps{Protocol: p})
+	store2, _ := keystore.NewEncryptedFile(keystore.FileConfig{Directory: directory}, testSecret{})
+	reopenedProvider, _ := identity.New(identity.Config{KeyID: "p2p"}, identity.Deps{Store: store2})
+	reopened, err := NewLibp2p(Config{Listen: []string{"/ip4/127.0.0.1/tcp/0"}}, Deps{Protocol: p, Identity: reopenedProvider})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,8 +77,8 @@ func TestLibp2pRequestIdentityAndLimits(t *testing.T) {
 func TestForeignChainRejected(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	a, _ := NewLibp2p(Config{Listen: []string{"/ip4/127.0.0.1/tcp/0"}}, Deps{Protocol: testprotocol.New("a")})
-	b, _ := NewLibp2p(Config{Listen: []string{"/ip4/127.0.0.1/tcp/0"}}, Deps{Protocol: testprotocol.New("b")})
+	a, _ := NewLibp2p(Config{Listen: []string{"/ip4/127.0.0.1/tcp/0"}}, Deps{Protocol: testprotocol.New("a"), Identity: testIdentity()})
+	b, _ := NewLibp2p(Config{Listen: []string{"/ip4/127.0.0.1/tcp/0"}}, Deps{Protocol: testprotocol.New("b"), Identity: testIdentity()})
 	b.Handle(func(context.Context, []byte) ([]byte, error) {
 		t.Error("foreign chain reached handler")
 		return nil, nil
@@ -93,8 +100,8 @@ func TestForeignChainRejected(t *testing.T) {
 func TestRequestCancellationAndHandlerDrain(t *testing.T) {
 	ctx := context.Background()
 	p := testprotocol.New("cancel")
-	a, _ := NewLibp2p(Config{Timeout: "2s"}, Deps{Protocol: p})
-	b, _ := NewLibp2p(Config{Timeout: "2s"}, Deps{Protocol: p})
+	a, _ := NewLibp2p(Config{Timeout: "2s"}, Deps{Protocol: p, Identity: testIdentity()})
+	b, _ := NewLibp2p(Config{Timeout: "2s"}, Deps{Protocol: p, Identity: testIdentity()})
 	entered := make(chan struct{})
 	drained := make(chan struct{})
 	b.Handle(func(ctx context.Context, _ []byte) ([]byte, error) {
@@ -150,8 +157,8 @@ func (p otherGenesis) Genesis(ctx context.Context) (core.Block, map[string][]byt
 func TestSameDescriptorDifferentGenesisRejected(t *testing.T) {
 	ctx := context.Background()
 	p := testprotocol.New("same")
-	a, _ := NewLibp2p(Config{}, Deps{Protocol: p})
-	b, _ := NewLibp2p(Config{}, Deps{Protocol: otherGenesis{p}})
+	a, _ := NewLibp2p(Config{}, Deps{Protocol: p, Identity: testIdentity()})
+	b, _ := NewLibp2p(Config{}, Deps{Protocol: otherGenesis{p}, Identity: testIdentity()})
 	b.Handle(func(context.Context, []byte) ([]byte, error) {
 		t.Error("foreign genesis reached handler")
 		return nil, nil
@@ -170,7 +177,7 @@ func TestSameDescriptorDifferentGenesisRejected(t *testing.T) {
 	}
 }
 func TestOutgoingSaturationCancellation(t *testing.T) {
-	n, err := NewLibp2p(Config{Timeout: "10ms"}, Deps{Protocol: testprotocol.New("slots")})
+	n, err := NewLibp2p(Config{Timeout: "10ms"}, Deps{Protocol: testprotocol.New("slots"), Identity: testIdentity()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,72 +193,42 @@ func TestOutgoingSaturationCancellation(t *testing.T) {
 	}
 }
 
-func TestConcurrentIdentityCreation(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "shared-key")
-	start := make(chan struct{})
-	results := make(chan []byte, 64)
-	failures := make(chan error, 64)
-	for i := 0; i < 64; i++ {
-		go func() {
-			<-start
-			k, err := identity(path)
-			if err != nil {
-				failures <- err
-				return
-			}
-			data, err := crypto.MarshalPrivateKey(k)
-			if err != nil {
-				failures <- err
-				return
-			}
-			results <- data
-		}()
-	}
-	close(start)
-	var first []byte
-	for i := 0; i < 64; i++ {
-		select {
-		case err := <-failures:
-			t.Error(err)
-		case key := <-results:
-			if first == nil {
-				first = key
-			} else if !bytes.Equal(first, key) {
-				t.Error("concurrent creators got different identities")
-			}
-		}
+func testIdentity() *identity.Provider {
+	p, _ := identity.New(identity.Config{KeyID: "p2p"}, identity.Deps{Store: keystore.NewMemory()})
+	return p
+}
+func TestMissingIdentity(t *testing.T) {
+	if _, e := NewLibp2p(Config{}, Deps{Protocol: testprotocol.New("missing")}); e == nil {
+		t.Fatal("missing identity accepted")
 	}
 }
 
-func TestInterruptedIdentityTempDoesNotPublish(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "identity")
-	// A process dying while writing its private temporary file leaves no final name.
-	if err := os.WriteFile(filepath.Join(dir, ".identity-abandoned"), []byte("partial-key"), 0600); err != nil {
-		t.Fatal(err)
+type testSecret struct{}
+
+func (testSecret) Secret(context.Context) ([]byte, error) {
+	return []byte("network-test-password"), nil
+}
+
+type failedIdentity struct {
+	data []byte
+	err  error
+}
+
+func (p failedIdentity) PrivateKey(context.Context) ([]byte, error) { return p.data, p.err }
+func TestIdentityFailureClearsReturnedMaterial(t *testing.T) {
+	material := []byte("private-key-material")
+	failure := errors.New("identity unavailable")
+	n, e := NewLibp2p(Config{}, Deps{Protocol: testprotocol.New("failed-identity"), Identity: failedIdentity{material, failure}})
+	if e != nil {
+		t.Fatal(e)
 	}
-	key, err := identity(path)
-	if err != nil {
-		t.Fatal(err)
+	if e = n.Start(context.Background()); !errors.Is(e, failure) {
+		t.Fatal(e)
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
+	if !bytes.Equal(material, make([]byte, len(material))) {
+		t.Fatal("failed identity material retained")
 	}
-	stored, err := crypto.UnmarshalPrivateKey(data)
-	if err != nil || !stored.Equals(key) {
-		t.Fatal("identity not fully published", err)
-	}
-	// A failed publication must preserve the winner and remove its private temp.
-	if err := publishIdentity(path, []byte("replacement")); !errors.Is(err, os.ErrExist) {
-		t.Fatal(err)
-	}
-	reread, _ := os.ReadFile(path)
-	if !bytes.Equal(data, reread) {
-		t.Fatal("winner was overwritten")
-	}
-	matches, _ := filepath.Glob(filepath.Join(dir, ".identity-*"))
-	if len(matches) != 1 {
-		t.Fatal("failed publication left temporary files", matches)
+	if n.running || n.h != nil || len(n.Addresses()) != 0 {
+		t.Fatal("failed identity started network")
 	}
 }
