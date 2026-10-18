@@ -63,6 +63,14 @@ Bolt 格式 2 保存协议身份与创世绑定。打开时拒绝身份、创世
 
 internal/testprotocol 提供测试样例：自定义 Label/Body 交易，无签名和 nonce，使用带前缀的二进制 SHA-512 标识、自定义区块字段与附加引用、64 字节状态承诺。tests/integration 验证它通过同一套交易池、构块、协调和 Bolt 后端完成出块、落盘、重开与继续提交。
 
+## API 读取与受理
+
+API 领域服务位于 `api`，不依赖 HTTP 或具体账户模型。`cap/query.Submitter` 返回受理结果而非隐含确认；本地 accepted 与观察到的 confirmed 均不承诺最终性。
+
+`cap/query.ConfirmationReader` 把确认交易、可选回执和观察链头作为一个读取能力。内存与 Bolt 在同一锁/读事务内捕获这三者，协议解码在释放锁/事务后执行；不能通过依次调用独立 Transaction、Receipt、Head 来实现同样的保证。该能力与快照查询共享一个 LedgerIdentity。
+
+状态查询先固定区块 ID，再读取对应快照；响应展示编码不改变 core.ID 或 Commitment 的不透明字节语义。具体 HTTP 契约见 [外部 API](api.md)。
+
 ## 当前能力边界
 
 默认存储提供单一 canonical cursor，状态为键值快照、显式写入与删除集；多头链、特殊状态树可能需要扩展能力或替换相应插件。自定义区块格式不等于已经实现 GOVM 的多链协议，也不意味着任意共识算法可以互换。

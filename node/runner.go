@@ -67,10 +67,18 @@ func NewRunner(cfg RunnerConfig, d RunnerDeps) (core.Node, error) {
 			return nil, fmt.Errorf("node: resource must have comparable nonnil identity")
 		}
 	}
+	for _, r := range resources {
+		if bound, ok := r.(core.LedgerBound); ok && bound.LedgerID() != d.Ledger.LedgerID() {
+			return nil, core.ErrLedgerMismatch
+		}
+	}
 	workers := []Worker{consensusWorker{d.Consensus, d.Host}}
 	for _, w := range d.Workers {
 		if w == nil || isNil(w) {
 			return nil, fmt.Errorf("node: nil worker")
+		}
+		if bound, ok := w.(core.LedgerBound); ok && bound.LedgerID() != d.Ledger.LedgerID() {
+			return nil, core.ErrLedgerMismatch
 		}
 		workers = append(workers, w)
 	}

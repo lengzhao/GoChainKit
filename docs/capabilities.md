@@ -20,14 +20,15 @@
 | `cap/network` | libp2p、同步与 CLI：有界请求、身份连接及唯一 handler | 已接入现有网络插件与消费方 |
 | `cap/replication` | 导入、同步与监督：区块导入、传播运行器、本地故障标记 | 已接入 importer/branch、sync/chain、PoW |
 | `cap/asset` | 可选资产模型与经济规则：Currency、Escrow 及其值类型 | 已接入账户、UTXO、composed；32 字节地址仅约束此资产族 |
-| `cap/model` | composed Executor、模型插件：交易执行、变更与确定性执行上下文 | 已接入现有账户、UTXO、composed；唯一规范定义 |
+| `cap/model` | composed Executor、模型插件：交易执行、变更与确定性执行上下文；可选 Provider 向专属查询适配器暴露实际模型 | 已接入现有账户、UTXO、composed 及可选模型查询；唯一规范定义 |
 | `cap/validator` | PoA/DPoS 规则与调度：绑定父块的历史成员集合 | 契约草案，尚无消费者实现 |
 | `cap/signer` | 共识签名及验证适配：签名套件、公钥、链/用途/版本域分离 | 契约草案，尚无具体套件或签名实现 |
 | `cap/body` | 引用体协议、同步与导入：解析引用、获取交易、完整装配 | 契约草案，未接入存储/网络执行链路 |
 | `cap/state` | 合约调用适配：隔离状态 Journal 与 LIFO 检查点 | 契约草案，无持久提交方法 |
 | `cap/contract` | 合约模型：Runtime、CodeProvider、离线 Compiler、最小 Host | 契约草案，无 VM 实现 |
 | `cap/message` | 同步/投票等消息插件：复用一个 Network handler | 契约草案，既有网络尚未改为 Router |
-| `cap/query` | HTTP/RPC 薄适配：提交与可选历史高度索引 | 契约草案 |
+| `cap/query` | API 领域服务：交易受理结果、同一视图的交易/回执/链头读取、可选历史高度索引 | 受理与确认查询已接入领域服务、内存及 Bolt；高度索引仍为可选契约 |
+| `cap/http` | 可选 HTTP 服务生命周期与路由贡献能力 | 已接入通用 HTTP 插件、节点监督及 CLI；模型路由按需装配 |
 
 不保留旧扩展接口的 core/model 路径、别名或转发函数；无消费者的旧 Message/Transport 定义已删除。模型实现仍位于 `model/account`、`model/utxo`；`model/asset` 仅保留地址派生、费用编码与安全加法等算法助手。状态应用直接使用 `core.ApplyStateChanges`，cap 不包含应用算法。交易编码、磁盘格式与链规则未因此改变。
 
@@ -47,4 +48,4 @@ Runtime 身份包含产物格式、指令语义和计费版本；代码内容寻
 
 当前 cap 中尚无具体实现的新接口是可评审设计入口，不代表功能可用。后续用真实消费方验证后可以删减或调整；只有已有替换需要才进一步拆接口。不得通过添加空实现伪造支持。
 
-建议顺序：父块绑定成员集合与 PoA → 引用体装配及缺失交易请求 → Journal 与确定性 Runtime → 查询 API。消息复用应在多个实际消息消费者接入时实现；多分片证明与跨链执行仍是后续独立能力。
+基础查询 API 已接入。后续可按实际需求推进父块绑定成员集合与 PoA、引用体装配及缺失交易请求、Journal 与确定性 Runtime；消息复用应在多个实际消息消费者接入时实现。多分片证明与跨链执行仍是后续独立能力。

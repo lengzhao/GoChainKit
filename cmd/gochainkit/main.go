@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"github.com/lengzhao/GoChainKit/assembly"
+	httpcap "github.com/lengzhao/GoChainKit/cap/http"
 	networkcap "github.com/lengzhao/GoChainKit/cap/network"
 
 	_ "github.com/lengzhao/GoChainKit/plugins/all"
@@ -44,12 +45,16 @@ func run() error {
 		return err
 	}
 	networks := map[string]networkcap.Network{}
+	apis := map[string]httpcap.Server{}
 	for _, instance := range result.Instances {
+		if server, ok := instance.Value.(httpcap.Server); ok {
+			apis[instance.ID] = server
+		}
 		if network, ok := instance.Value.(networkcap.Network); ok {
 			networks[instance.ID] = network
 		}
 	}
-	if len(networks) == 0 {
+	if len(networks) == 0 && len(apis) == 0 {
 		return root.Run(ctx)
 	}
 	finished := make(chan error, 1)
@@ -62,6 +67,14 @@ func run() error {
 		case err := <-finished:
 			return err
 		case <-ticks:
+			for id, server := range apis {
+				if addresses := server.Addresses(); len(addresses) > 0 {
+					for _, addr := range addresses {
+						fmt.Fprintln(os.Stdout, "API:", addr)
+					}
+					delete(apis, id)
+				}
+			}
 			for id, network := range networks {
 				addresses := network.Addresses()
 				if len(addresses) > 0 {
@@ -71,7 +84,7 @@ func run() error {
 					delete(networks, id)
 				}
 			}
-			if len(networks) == 0 {
+			if len(networks) == 0 && len(apis) == 0 {
 				ticker.Stop()
 				ticks = nil
 			}

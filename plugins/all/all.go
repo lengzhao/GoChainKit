@@ -3,6 +3,10 @@
 package all
 
 import (
+	_ "github.com/lengzhao/GoChainKit/plugins/api/account"
+	_ "github.com/lengzhao/GoChainKit/plugins/api/http"
+	_ "github.com/lengzhao/GoChainKit/plugins/api/query"
+	_ "github.com/lengzhao/GoChainKit/plugins/api/utxo"
 	_ "github.com/lengzhao/GoChainKit/plugins/builder"
 	_ "github.com/lengzhao/GoChainKit/plugins/consensus"
 	_ "github.com/lengzhao/GoChainKit/plugins/executor"

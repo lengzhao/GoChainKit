@@ -8,7 +8,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
-	"errors"
 	"fmt"
 	assetcap "github.com/lengzhao/GoChainKit/cap/asset"
 	"github.com/lengzhao/GoChainKit/cap/model"
@@ -133,18 +132,28 @@ func read(state map[string][]byte, address assetcap.Address) (uint64, uint64, er
 	}
 	return binary.BigEndian.Uint64(data[:8]), binary.BigEndian.Uint64(data[8:]), nil
 }
-func Balance(ctx context.Context, s core.StateReader, address assetcap.Address) (uint64, error) {
+
+// Account contains the balance and sequence at one state snapshot.
+type Account struct{ Balance, Nonce uint64 }
+
+// ReadAccount reads one address without enumerating unrelated state. Missing
+// addresses have zero balance and nonce, as in transaction execution.
+func ReadAccount(ctx context.Context, s core.StateReader, address assetcap.Address) (Account, error) {
 	data, err := s.Get(ctx, []byte(key(address)))
-	if errors.Is(err, core.ErrNotFound) {
-		return 0, nil
+	if err == core.ErrNotFound {
+		return Account{}, nil
 	}
 	if err != nil {
-		return 0, err
+		return Account{}, err
 	}
 	if len(data) != 16 {
-		return 0, fmt.Errorf("corrupt account record")
+		return Account{}, fmt.Errorf("corrupt account record")
 	}
-	return binary.BigEndian.Uint64(data[:8]), nil
+	return Account{binary.BigEndian.Uint64(data[:8]), binary.BigEndian.Uint64(data[8:])}, nil
+}
+func Balance(ctx context.Context, s core.StateReader, address assetcap.Address) (uint64, error) {
+	a, err := ReadAccount(ctx, s, address)
+	return a.Balance, err
 }
 func (e *Engine) Genesis(ctx context.Context) (map[string][]byte, error) {
 	if err := ctx.Err(); err != nil {

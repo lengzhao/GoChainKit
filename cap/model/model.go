@@ -69,3 +69,10 @@ type TimestampContext interface{ Timestamp() int64 }
 type StateCommitmentContext interface {
 	StateCommitment(context.Context, map[string][]byte) (core.Commitment, error)
 }
+
+// Provider optionally exposes the active execution engine to model-specific adapters.
+// Generic execution and transports do not require this capability.
+type Provider interface {
+	core.ProtocolBound
+	ExecutionModel() Engine
+}

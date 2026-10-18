@@ -74,3 +74,44 @@ func TestRunnerPreservesShutdownFailures(t *testing.T) {
 		}
 	}
 }
+
+type boundResource struct {
+	testResource
+	owner *core.LedgerIdentity
+}
+
+func (r *boundResource) LedgerID() *core.LedgerIdentity { return r.owner }
+func (r *boundResource) Run(ctx context.Context) error  { return nil }
+
+type boundLedger struct {
+	core.Ledger
+	owner *core.LedgerIdentity
+}
+
+func (l boundLedger) LedgerID() *core.LedgerIdentity { return l.owner }
+
+type boundHost struct {
+	core.ConsensusHost
+	owner *core.LedgerIdentity
+}
+
+func (h boundHost) LedgerID() *core.LedgerIdentity { return h.owner }
+
+type noConsensus struct{}
+
+func (noConsensus) Run(context.Context, core.ConsensusHost) error { return nil }
+func TestRejectForeignResourcesAndWorkers(t *testing.T) {
+	owner := core.NewLedgerIdentity()
+	foreign := &boundResource{owner: core.NewLedgerIdentity()}
+	for _, worker := range []bool{false, true} {
+		d := RunnerDeps{Ledger: boundLedger{owner: owner}, Host: boundHost{owner: owner}, Consensus: noConsensus{}}
+		if worker {
+			d.Workers = []Worker{foreign}
+		} else {
+			d.Resources = []core.Lifecycle{foreign}
+		}
+		if _, e := NewRunner(RunnerConfig{}, d); !errors.Is(e, core.ErrLedgerMismatch) {
+			t.Fatal(e)
+		}
+	}
+}

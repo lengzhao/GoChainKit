@@ -20,6 +20,7 @@ func TestPresetRunAndReopen(t *testing.T) {
 	}
 	cfg := strings.ReplaceAll(string(data), "data/chain.db", filepath.Join(t.TempDir(), "chain.db"))
 	cfg = strings.ReplaceAll(cfg, "interval: 1s", "interval: 2ms")
+	cfg = strings.ReplaceAll(cfg, "127.0.0.1:8080", "127.0.0.1:0")
 	var previous uint64
 	for phase := 0; phase < 2; phase++ {
 		root, result, err := Load(context.Background(), strings.NewReader(cfg))

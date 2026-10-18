@@ -388,3 +388,8 @@ func (p *WorkProtocol) Seal(ctx context.Context, b core.Block) (core.Block, erro
 	}
 	return Wrap(v)
 }
+
+// ExecutionModel returns the immutable engine selected when constructing the protocol.
+func (p *Protocol) ExecutionModel() model.Engine { return p.engine }
+
+var _ model.Provider = (*Protocol)(nil)

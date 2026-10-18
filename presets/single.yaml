@@ -28,7 +28,14 @@ plugins:
   consensus:
     use: consensus/single
     config: {interval: 1s}
+  api-query:
+    use: api/query
+    deps: {protocol: protocol, ledger: ledger, pool: pool}
+  api:
+    use: api/http
+    config: {listen: '127.0.0.1:8080'}
+    deps: {query: api-query}
   node:
     use: node/default
     config: {shutdownTimeout: 5s}
-    deps: {ledger: ledger, host: host, consensus: consensus}
+    deps: {ledger: ledger, host: host, consensus: consensus, resources: [api], workers: [api]}
