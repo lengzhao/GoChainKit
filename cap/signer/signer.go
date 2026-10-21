@@ -41,3 +41,7 @@ type Signer interface {
 type Verifier interface {
 	Verify(context.Context, PublicKey, Domain, []byte, []byte) error
 }
+
+// KeyValidator optionally preflights a suite and public key without private key
+// access. Consensus constructors can require it alongside Verifier.
+type KeyValidator interface{ ValidatePublicKey(PublicKey) error }

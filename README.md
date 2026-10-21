@@ -2,7 +2,7 @@
 
 基于 Go 和 PluginKit 的模块化区块链开发框架，目标是通过配置装配模块，快速构建一条新链。
 
-当前支持配置驱动的独立节点 CLI、单节点出块、事务落盘与重开恢复。内置 single 与简化 PoW 两种开发共识；PoW 可通过 libp2p 组成多节点开发网络。
+当前支持配置驱动的独立节点 CLI、单节点出块、事务落盘与重开恢复。内置 single、PoW 与签名 PoA 开发共识，通过 libp2p 组成多节点开发网络；可组合账户与 UTXO 模型。
 
 接口分层采用稳定的 `core` 与可演进的 `cap/<能力>`；领域实现和插件通过类型化 Deps 组合。参见 [能力分层与实现状态](docs/capabilities.md)。
 
@@ -20,6 +20,8 @@
 - bbolt 持久化插件：区块、状态、已确认交易、回执和链头在同一事务落盘，支持重开恢复。
 - 可组合 HTTP API：协议交易受理、链/区块/确认交易/回执查询、节点信息，以及按需装配的账户与 UTXO 查询。
 - 事务型 KV 后端：通用账本通过 Deps 选择内存或 Bolt；密钥保存与网络身份独立装配，支持加密文件及环境口令来源。
+- 版本化 Ed25519 签名/验签、静态成员、PoA 轮值规则、独立封印与选链插件；观察节点无需共识私钥。
+- 有界执行局部 Journal、嵌套 LIFO 回滚和窄快照适配，为独立 Runtime 提供 KV 隔离基础。
 
 ## 开发
 
@@ -43,6 +45,9 @@ go test ./tests/integration -v
 - [外部 API、插件装配与资源限制](docs/api.md)
 - [libp2p 与 PoW 开发网络](docs/network-consensus.md)
 - [架构评估与下一步建议](docs/architecture-review.md)
+- [GOVM 功能差距与源码依据](docs/govm-feature-map.md)
+- [GOVM 能力接口与插件组合草案](docs/plans/2026-10-20-govm-cap-design.md)
+- [GOVM 基础插件与 PoA 运行](docs/govm-foundation.md)
 
 后续按需求扩展外部访问能力与持久化压力验证。
 

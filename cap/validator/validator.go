@@ -21,10 +21,12 @@ type Set struct {
 	Members []Member
 }
 
-// ValidatorSetProvider derives membership from the specified parent's agreed
-// state, never from a mutable current-head or local operator list. Returned
-// slices and keys are caller-owned. Unknown anchors return core.ErrNotFound.
-type ValidatorSetProvider interface {
-	core.ProtocolBound
-	Validators(context.Context, core.ID) (Set, error)
+// Provider derives a deterministic ordered member set from an already validated
+// parent supplied by its consumer. Identity commits membership policy/config;
+// neither mutable local heads nor ledger dependencies belong in this contract.
+// Static providers anchor the snapshot without claiming historical existence.
+// Returned slices and public key bytes belong to the caller.
+type Provider interface {
+	Identity() core.ID
+	Members(context.Context, core.Block) (Set, error)
 }

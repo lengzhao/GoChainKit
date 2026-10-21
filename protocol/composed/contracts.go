@@ -70,3 +70,8 @@ type Economics interface {
 	Enabled() bool
 	Reward(uint64) (uint64, error)
 }
+
+// CandidateRule rejects consensus-invalid scheduling fields before execution.
+type CandidateRule interface {
+	ValidateCandidate(context.Context, core.ChainStore, Envelope, Envelope) error
+}

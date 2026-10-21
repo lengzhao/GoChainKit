@@ -24,13 +24,13 @@ func TestPoWRejectsMissingDependencies(t *testing.T) {
 	}
 }
 func TestPoWCommittedCancellationIsFatal(t *testing.T) {
-	if transientPoW(&core.CommittedError{BlockID: "committed", Cause: context.Canceled}) {
+	if transientProduction(&core.CommittedError{BlockID: "committed", Cause: context.Canceled}) {
 		t.Fatal("committed maintenance failure swallowed as cancellation")
 	}
-	if transientPoW(errors.Join(context.Canceled, errors.New("disk failure"))) {
+	if transientProduction(errors.Join(context.Canceled, errors.New("disk failure"))) {
 		t.Fatal("mixed cancellation swallowed")
 	}
-	if !transientPoW(fmt.Errorf("mining canceled: %w", context.Canceled)) {
+	if !transientProduction(fmt.Errorf("mining canceled: %w", context.Canceled)) {
 		t.Fatal("pure cancellation not retryable")
 	}
 }

@@ -7,6 +7,7 @@ import (
 	_ "github.com/lengzhao/GoChainKit/plugins/api/http"
 	_ "github.com/lengzhao/GoChainKit/plugins/api/query"
 	_ "github.com/lengzhao/GoChainKit/plugins/api/utxo"
+	_ "github.com/lengzhao/GoChainKit/plugins/authority"
 	_ "github.com/lengzhao/GoChainKit/plugins/backend"
 	_ "github.com/lengzhao/GoChainKit/plugins/builder"
 	_ "github.com/lengzhao/GoChainKit/plugins/consensus"
@@ -20,5 +21,8 @@ import (
 	_ "github.com/lengzhao/GoChainKit/plugins/replication"
 	_ "github.com/lengzhao/GoChainKit/plugins/secret"
 	_ "github.com/lengzhao/GoChainKit/plugins/selector"
+	_ "github.com/lengzhao/GoChainKit/plugins/signer"
+	_ "github.com/lengzhao/GoChainKit/plugins/state/journal"
 	_ "github.com/lengzhao/GoChainKit/plugins/storage"
+	_ "github.com/lengzhao/GoChainKit/plugins/validator"
 )

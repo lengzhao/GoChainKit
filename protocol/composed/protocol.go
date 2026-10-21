@@ -243,8 +243,16 @@ func (p *Protocol) Finalize(ctx context.Context, d core.Block, r core.ExecutionR
 	b.Header.ReceiptsRoot = receiptRoot(r.Receipts)
 	return Wrap(b)
 }
-func (p *Protocol) ValidateCandidate(ctx context.Context, _ core.ChainStore, parent, b core.Block) error {
-	return p.common(ctx, parent, b)
+func (p *Protocol) ValidateCandidate(ctx context.Context, history core.ChainStore, parent, b core.Block) error {
+	if e := p.common(ctx, parent, b); e != nil {
+		return e
+	}
+	if rule, ok := p.rule.(CandidateRule); ok {
+		old, _ := Unwrap(parent)
+		next, _ := Unwrap(b)
+		return rule.ValidateCandidate(ctx, history, old, next)
+	}
+	return nil
 }
 func (p *Protocol) common(ctx context.Context, parent, b core.Block) error {
 	if e := ctx.Err(); e != nil {

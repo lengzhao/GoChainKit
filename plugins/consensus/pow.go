@@ -76,7 +76,7 @@ func (p *powConsensus) Run(ctx context.Context, h core.ConsensusHost) (returnErr
 		wg.Wait()
 		select {
 		case e := <-replicationDone:
-			if !purePoWCancellation(e) {
+			if !pureCancellation(e) {
 				returnErr = errors.Join(returnErr, e)
 			}
 		default:
@@ -84,7 +84,7 @@ func (p *powConsensus) Run(ctx context.Context, h core.ConsensusHost) (returnErr
 		if mineDone != nil {
 			select {
 			case e := <-mineDone:
-				if !transientPoW(e) {
+				if !transientProduction(e) {
 					returnErr = errors.Join(returnErr, e)
 				}
 			default:
@@ -99,14 +99,14 @@ func (p *powConsensus) Run(ctx context.Context, h core.ConsensusHost) (returnErr
 		case <-ctx.Done():
 			return ctx.Err()
 		case e := <-replicationDone:
-			if purePoWCancellation(e) && ctx.Err() != nil {
+			if pureCancellation(e) && ctx.Err() != nil {
 				return ctx.Err()
 			}
 			return e
 		case e := <-mineDone:
 			mineDone = nil
 			stopMining = nil
-			if !transientPoW(e) {
+			if !transientProduction(e) {
 				return e
 			}
 		case <-tick.C:
@@ -151,47 +151,4 @@ func (p *powConsensus) Run(ctx context.Context, h core.ConsensusHost) (returnErr
 			}(head)
 		}
 	}
-}
-func transientPoW(e error) bool {
-	if e == nil {
-		return true
-	}
-	switch v := e.(type) {
-	case *core.CommittedError, *replicationcap.LocalServiceError:
-		return false
-	case interface{ Unwrap() []error }:
-		for _, child := range v.Unwrap() {
-			if !transientPoW(child) {
-				return false
-			}
-		}
-		return true
-	case interface{ Unwrap() error }:
-		return transientPoW(v.Unwrap())
-	}
-	return e == context.Canceled || e == core.ErrConflict || e == core.ErrNoProposal || e == core.ErrAlreadyCommitted
-}
-
-func purePoWCancellation(e error) bool {
-	if e == nil {
-		return false
-	}
-	switch v := e.(type) {
-	case *core.CommittedError, *core.TransactionError, *replicationcap.LocalServiceError:
-		return false
-	case interface{ Unwrap() []error }:
-		children := v.Unwrap()
-		if len(children) == 0 {
-			return false
-		}
-		for _, child := range children {
-			if !purePoWCancellation(child) {
-				return false
-			}
-		}
-		return true
-	case interface{ Unwrap() error }:
-		return purePoWCancellation(v.Unwrap())
-	}
-	return e == context.Canceled || e == context.DeadlineExceeded
 }
