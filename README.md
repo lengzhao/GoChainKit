@@ -34,7 +34,18 @@ go vet ./...
 go test ./tests/integration -v
 ```
 
-## 设计文档
+## 文档入口
+
+- [文档地图与阅读路径](docs/index.md)
+- [框架目标、分层与边界](docs/overview.md) · [当前能力与组合矩阵](docs/status.md)
+- [开发链快速启动](docs/tutorials/quickstart.md) · [第一笔已签名交易与重开](docs/tutorials/first-transaction.md)
+- [构建自己的链：两条扩展路径](docs/tutorials/custom-chain.md)
+- [插件与配置参考](docs/reference/plugins.md) · [兼容与恢复](docs/guides/compatibility-recovery.md)
+- [扩展验证](docs/contributing/testing.md) · [路线图与待决事项](docs/roadmap.md)
+
+下列历史设计与专题保留原路径；当前规范与历史资料的区别见 [归档索引](docs/archive/index.md)。
+
+## 专题与历史设计
 
 - [架构草图](docs/plans/2026-10-17-gochainkit-design.md)
 - [编程与模块接口规范](docs/development-conventions.md)
@@ -49,7 +60,7 @@ go test ./tests/integration -v
 - [GOVM 能力接口与插件组合草案](docs/plans/2026-10-20-govm-cap-design.md)
 - [GOVM 基础插件与 PoA 运行](docs/govm-foundation.md)
 
-后续按需求扩展外部访问能力与持久化压力验证。
+后续工作以 [路线图](docs/roadmap.md) 为准。格式无关接口不代表现有后端支持 DAG/多分片；内置网络和共识以开发验证为目标，不承诺生产就绪。
 
 当前状态根算法扫描完整快照；内存存储保留历史快照，适用于小规模开发验证。永久无效交易会从池中驱逐，暂不可执行交易保留并跳过；链头冲突会重试，内部执行与存储错误仍向运行器报告。
 

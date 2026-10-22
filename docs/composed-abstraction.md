@@ -1,5 +1,7 @@
 # 组合协议抽象与接口评估
 
+> 文档类型：历史评估与决策记录（2026-10-17），保留原路径。建议 1—5 已采纳；当前契约见 [组合指南](composition.md)、[接口规范](interfaces.md) 与 `protocol/composed/contracts.go`。建议 6、状态感知规则及进一步子插件拆分仍需真实消费者与独立设计。
+
 日期：2026 年 10 月 17 日。本文从抽象与接口定义层面评估 `protocol/composed` 及其关联抽象（`core` 能力接口、`cap/model.Engine`、`Rule`、`Choice`），给出后续建议。除特别说明外，建议尚未实现；现状描述以当前代码为准。
 
 ## 抽象分层现状
@@ -96,7 +98,7 @@ flowchart TD
 
 现状：`executionContext` 通过具体类型额外暴露 `Height()`、`Timestamp()`、`StateCommitment()`，模型以类型断言获取。可用能力清单只散落在实现里，模型作者无法从接口定义知道可以断言什么。
 
-建议：在 `model` 包定义具名的可选能力接口（如 `HeightContext`、`TimestampContext`、`StateCommitmentContext`），让 composed 的上下文实现它们，而不是暴露具体类型的裸方法。模型断言标准接口，其他协议族提供上下文时也能复用同一组断言目标。基础 `ExecutionContext` 保持三个方法不变，不给所有模型强加高度/时间字段。
+建议：在 `cap/model` 包定义具名的可选能力接口（如 `HeightContext`、`TimestampContext`、`StateCommitmentContext`），让 composed 的上下文实现它们，而不是暴露具体类型的裸方法。模型断言标准接口，其他协议族提供上下文时也能复用同一组断言目标。基础 `ExecutionContext` 保持三个方法不变，不给所有模型强加高度/时间字段。
 
 ### 5 Choice 的分数不透明性需要配套文档
 
@@ -166,7 +168,7 @@ PoW、DPoS 的运行编排与规则验证分离；选链与最终性策略独立
 
 ## 本轮落地状态
 
-已落实建议 1—5：补充执行与验证顺序、奖励归属、分数不透明性契约；构造期解析并保存启用的 Economics/Currency；在 model 中公开 HeightContext、TimestampContext、StateCommitmentContext。基础 ExecutionContext 不增加必选方法。
+已落实建议 1—5：补充执行与验证顺序、奖励归属、分数不透明性契约；构造期解析并保存启用的 Economics/Currency；在 cap/model 中公开 HeightContext、TimestampContext、StateCommitmentContext。基础 ExecutionContext 不增加必选方法。
 
 account、UTXO 和 PoW 的插件适配入口已预留空的类型化 Deps，领域构造函数保持独立。既有 composed 和 builder 的显式依赖组合继续保留；尚未新增奖励、调难或状态感知校验子插件，相关拆分需有实际替换需求。
 

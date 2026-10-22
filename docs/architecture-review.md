@@ -1,5 +1,8 @@
 # GoChainKit 架构评估
 
+> 文档类型：历史评估（2026-10-17），按 [归档索引](archive/index.md) 保留原路径。正文问题描述仅代表当时基线；当前接口以 [interfaces](interfaces.md)、能力状态以 [status](status.md) 为准。
+> 已解决：账本 owner、交易处置、Node 运行、能力拆分；显式删除、网络同步和分支也已有实现。本文中的旧路径/类型说明不作为当前 API。原 runtime/ledger 已移除，源码链接指向现有存储助手便于追溯，不表示旧函数仍存在。
+
 日期：2026 年 10 月 17 日。评估基于目录简化后的代码，覆盖 core、node、plugins、默认协议、共享存储及集成装配。本文给出后续建议，不表示建议已经实现。
 
 ## 总体判断
@@ -23,7 +26,7 @@
 
 ### 1 同一账本的原子边界
 
-证据：[CoordinatorDeps](../node/coordinator.go) 独立注入 Chain、States、Committer，构造时仅核对协议身份。[ledger.Prepare](../runtime/ledger/ledger.go) 接收 ChainStore 后又运行时断言它实现 StateStore。
+证据：[CoordinatorDeps](../node/coordinator.go) 独立注入 Chain、States、Committer，构造时仅核对协议身份。[当前存储准备实现](../plugins/storage/helpers.go) 接收 ChainStore 后又运行时断言它实现 StateStore。
 
 协议相同只能说明规则相容，不能证明这些依赖连接同一份数据。
 
@@ -175,4 +178,4 @@ flowchart TD
 
 ## 执行进展
 
-本评估的前三批已落实：Ledger owner 绑定、候选前置绑定、交易错误分类与有限重选、提交后维护结果、根 Node 生命周期监督、配置与 CLI、消费者能力拆分、selector 子插件与内部存储助手。完整运行契约见 node-runtime.md，接口见 interfaces.md。下文风险描述代表评估时状态，不代表这些缺陷仍存在。状态树、VM、网络与多节点共识仍按实际需求推进。
+本评估的前三批已落实：Ledger owner 绑定、候选前置绑定、交易错误分类与有限重选、提交后维护结果、根 Node 生命周期监督、配置与 CLI、消费者能力拆分、selector 子插件与内部存储助手。完整运行契约见 node-runtime.md，接口见 interfaces.md。上文风险描述代表评估时状态，不代表这些缺陷仍存在。状态树、VM、网络与多节点共识仍按实际需求推进。

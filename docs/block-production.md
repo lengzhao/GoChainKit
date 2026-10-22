@@ -36,6 +36,6 @@ go test ./tests/integration -v
 
 用事务数据库替换内存后端，保持接口行为：区块、状态、回执与链头一起提交。先验证正常重启，再做故障注入及子进程中断恢复，不能仅靠正常关闭证明崩溃一致性。
 
-目前已有 bbolt 持久化和独立节点命令，见 storage.md 与 node-runtime.md。尚无对等网络或分布式共识保证，选用内存后端时历史状态随进程退出丢失。
+目前已有 bbolt 持久化和独立节点命令，见 storage.md 与 node-runtime.md。本文聚焦单节点基线；已有 libp2p 开发网络及 PoW/静态签名 PoA，见 [网络指南](network-consensus.md) 和 [PoA 场景指南](govm-foundation.md)，不提供生产级分布式安全保证。选用内存后端时历史状态随进程退出丢失。
 
 交易池仅提供候选副本，selector/fifo 负责按预算选择。构块器依 TransactionError 分类有限次剔除或延后候选；协调器在执行前验证候选绑定当前链头。Ledger owner 将构块读取、重新执行与原子提交绑定到同一账本。
