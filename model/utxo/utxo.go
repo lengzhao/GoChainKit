@@ -144,13 +144,15 @@ func Outpoints(tx core.Transaction) ([]Outpoint, error) {
 }
 
 type Config struct {
-	Network     string
-	Allocations []assetcap.Allocation
+	Network          string
+	Allocations      []assetcap.Allocation
+	CoinbaseMaturity uint64 `json:"coinbaseMaturity,omitempty"`
 }
 type Engine struct {
 	network     string
 	allocations []assetcap.Allocation
 	genesisID   [32]byte
+	maturity    uint64
 }
 
 func New(c Config) (*Engine, error) {
@@ -170,10 +172,14 @@ func New(c Config) (*Engine, error) {
 	}
 	data, _ := json.Marshal(c)
 	id := sha256.Sum256(append([]byte("gochainkit/utxo/genesis/v1\x00"), data...))
-	return &Engine{c.Network, append([]assetcap.Allocation(nil), c.Allocations...), id}, nil
+	return &Engine{c.Network, append([]assetcap.Allocation(nil), c.Allocations...), id, c.CoinbaseMaturity}, nil
 }
 func (e *Engine) Protocol() core.ProtocolDescriptor {
-	return core.ProtocolDescriptor{Name: "utxo", Version: "1", Network: e.network}
+	version := "1"
+	if e.maturity != 0 {
+		version = fmt.Sprintf("2/maturity/%d", e.maturity)
+	}
+	return core.ProtocolDescriptor{Name: "utxo", Version: version, Network: e.network}
 }
 func outputKey(o Outpoint) string {
 	return "model/utxo/output/" + string(o.TransactionID[:]) + string(binary.BigEndian.AppendUint32(nil, o.Index))
@@ -260,6 +266,19 @@ func (e *Engine) ValidateTransaction(ctx context.Context, tx core.Transaction) e
 	return nil
 }
 func (e *Engine) Execute(ctx context.Context, parent core.StateReader, txs []core.Transaction) (model.Transition, error) {
+	if e.maturity != 0 {
+		return model.Transition{}, fmt.Errorf("utxo maturity requires height context")
+	}
+	return e.execute(ctx, parent, txs, 0)
+}
+func (e *Engine) ExecuteInContext(ctx context.Context, parent core.StateReader, txs []core.Transaction, execution model.ExecutionContext) (model.Transition, error) {
+	h, ok := execution.(model.HeightContext)
+	if !ok {
+		return model.Transition{}, fmt.Errorf("utxo requires height context")
+	}
+	return e.execute(ctx, parent, txs, h.Height())
+}
+func (e *Engine) execute(ctx context.Context, parent core.StateReader, txs []core.Transaction, height uint64) (model.Transition, error) {
 	state, err := parent.Entries(ctx)
 	if err != nil {
 		return model.Transition{}, err
@@ -301,6 +320,16 @@ func (e *Engine) Execute(ctx context.Context, parent core.StateReader, txs []cor
 			}
 			if coin.To != asset.AddressOf(input.PublicKey) {
 				return reject(core.TransactionRejected, "input ownership mismatch")
+			}
+			if metadata, exists := state[maturityKey(k)]; exists {
+				if len(metadata) != 16 {
+					return model.Transition{}, fmt.Errorf("corrupt coinbase metadata")
+				}
+				if height < binary.BigEndian.Uint64(metadata[8:]) {
+					return reject(core.TransactionDeferred, "coinbase immature")
+				}
+				delete(state, maturityKey(k))
+				deleted[maturityKey(k)] = true
 			}
 			inputs, err = asset.Add(inputs, coin.Amount)
 			if err != nil {
@@ -345,6 +374,12 @@ func (e *Engine) Execute(ctx context.Context, parent core.StateReader, txs []cor
 	return out, nil
 }
 func (e *Engine) Credit(ctx context.Context, parent core.StateReader, mint assetcap.Mint) (model.Transition, error) {
+	if e.maturity != 0 {
+		return model.Transition{}, fmt.Errorf("utxo mint requires height context")
+	}
+	return e.CreditAtHeight(ctx, parent, mint, 0)
+}
+func (e *Engine) CreditAtHeight(ctx context.Context, parent core.StateReader, mint assetcap.Mint, height uint64) (model.Transition, error) {
 	if err := ctx.Err(); err != nil {
 		return model.Transition{}, err
 	}
@@ -364,7 +399,14 @@ func (e *Engine) Credit(ctx context.Context, parent core.StateReader, mint asset
 	if _, exists := state[k]; exists {
 		return model.Transition{}, fmt.Errorf("mint output collision")
 	}
-	return model.Transition{Writes: map[string][]byte{k: encode(Output{mint.To, mint.Amount}), marker: []byte{1}}}, nil
+	if height > ^uint64(0)-e.maturity {
+		return model.Transition{}, fmt.Errorf("coinbase maturity overflow")
+	}
+	writes := map[string][]byte{k: encode(Output{mint.To, mint.Amount}), marker: []byte{1}}
+	if e.maturity != 0 {
+		writes[maturityKey(k)] = binary.BigEndian.AppendUint64(binary.BigEndian.AppendUint64(nil, height), height+e.maturity)
+	}
+	return model.Transition{Writes: writes}, nil
 }
 
 var _ assetcap.Currency = (*Engine)(nil)

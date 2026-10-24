@@ -56,9 +56,19 @@ type ContextualEngine interface {
 	ExecuteInContext(context.Context, core.StateReader, []core.Transaction, ExecutionContext) (Transition, error)
 }
 
+// ContextRequirement lets an engine keep its context-free configuration without
+// adding history reads when none of its selected rules require them.
+type ContextRequirement interface{ RequiresExecutionContext() bool }
+
 // HeightContext optionally exposes the execution candidate's protocol height.
 // Height is not required by every model or protocol family.
 type HeightContext interface{ Height() uint64 }
+
+// BlockHeights is an optional protocol query capability for height-based models.
+type BlockHeights interface {
+	core.BlockCodec
+	BlockHeight(core.Block) (uint64, error)
+}
 
 // TimestampContext optionally exposes the candidate's agreed timestamp, not a
 // fresh local clock reading. Units and validity belong to the protocol family.

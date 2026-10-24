@@ -24,6 +24,13 @@ type Currency interface {
 	Credit(context.Context, core.StateReader, Mint) (model.Transition, error)
 }
 
+// HeightCurrency optionally binds issuance to candidate height (e.g. coinbase
+// maturity). The executor supplies the same deterministic height on replay.
+type HeightCurrency interface {
+	Currency
+	CreditAtHeight(context.Context, core.StateReader, Mint, uint64) (model.Transition, error)
+}
+
 const FeeEffect = "asset/fees/v1"
 
 // Escrow is an optional asset adapter for custody/locking rules such as staking.

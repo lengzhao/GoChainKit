@@ -1,0 +1,61 @@
+name: gochainkit
+
+x-common: &common
+  image: gochainkit:dev
+  build: .
+  environment:
+    GOCHAINKIT_KEYSTORE_PASSWORD: ${GOCHAINKIT_KEYSTORE_PASSWORD:-development-only-change-me}
+  networks: [chain]
+  stop_grace_period: 15s
+
+x-node: &node
+  <<: *common
+  restart: unless-stopped
+  depends_on:
+    init:
+      condition: service_completed_successfully
+  healthcheck:
+    test: [CMD, gochainkit-devnet, health]
+    interval: 3s
+    timeout: 5s
+    start_period: 10s
+    retries: 10
+
+services:
+  init:
+    <<: *common
+    command: [gochainkit-devnet, init]
+    volumes:
+      - network-config:/network
+      - node1-data:/data/node1
+      - node2-data:/data/node2
+      - node3-data:/data/node3
+  node1:
+    <<: *node
+    command: [gochainkit, --config, /network/node1.yaml]
+    ports: ["127.0.0.1:${GOCHAINKIT_PORT1:-8081}:8080"]
+    volumes:
+      - network-config:/network:ro
+      - node1-data:/data/node1
+  node2:
+    <<: *node
+    command: [gochainkit, --config, /network/node2.yaml]
+    ports: ["127.0.0.1:${GOCHAINKIT_PORT2:-8082}:8080"]
+    volumes:
+      - network-config:/network:ro
+      - node2-data:/data/node2
+  node3:
+    <<: *node
+    command: [gochainkit, --config, /network/node3.yaml]
+    ports: ["127.0.0.1:${GOCHAINKIT_PORT3:-8083}:8080"]
+    volumes:
+      - network-config:/network:ro
+      - node3-data:/data/node3
+
+networks:
+  chain: {}
+volumes:
+  network-config: {}
+  node1-data: {}
+  node2-data: {}
+  node3-data: {}

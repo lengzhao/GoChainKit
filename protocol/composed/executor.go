@@ -49,13 +49,17 @@ func (executor *Executor) Execute(ctx context.Context, s core.StateReader, b cor
 		return core.ExecutionResult{}, e
 	}
 	var transition model.Transition
-	if contextual, ok := p.engine.(model.ContextualEngine); ok {
+	contextual, useContext := p.engine.(model.ContextualEngine)
+	if requirement, ok := p.engine.(model.ContextRequirement); ok {
+		useContext = useContext && requirement.RequiresExecutionContext()
+	}
+	if useContext {
 		if history == nil {
 			return core.ExecutionResult{}, fmt.Errorf("contextual model requires executor history")
 		}
-		parent, e := history.Block(ctx, core.ID(string(v.Header.Parent)))
-		if e != nil {
-			return core.ExecutionResult{}, e
+		parent, err := history.Block(ctx, core.ID(string(v.Header.Parent)))
+		if err != nil {
+			return core.ExecutionResult{}, err
 		}
 		parentEnvelope, err := Unwrap(parent)
 		if err != nil {
@@ -115,7 +119,14 @@ func (executor *Executor) Execute(ctx context.Context, s core.StateReader, b cor
 			data = append(data, v.Header.Parent...)
 			data = binary.BigEndian.AppendUint64(data, v.Header.Height)
 			data = append(data, v.Header.Producer...)
-			credit, e := currency.Credit(ctx, stateReader{next, core.Commitment(string(stateHash(next)))}, assetcap.Mint{ID: core.ID(string(DoubleHash(data))), To: to, Amount: amount})
+			mint := assetcap.Mint{ID: core.ID(string(DoubleHash(data))), To: to, Amount: amount}
+			reader := stateReader{next, core.Commitment(string(stateHash(next)))}
+			var credit model.Transition
+			if contextual, ok := currency.(assetcap.HeightCurrency); ok {
+				credit, e = contextual.CreditAtHeight(ctx, reader, mint, v.Header.Height)
+			} else {
+				credit, e = currency.Credit(ctx, reader, mint)
+			}
 			if e != nil {
 				return core.ExecutionResult{}, e
 			}

@@ -1,0 +1,7 @@
+.git
+data
+.env
+*.key
+*.db
+*.out
+__pycache__

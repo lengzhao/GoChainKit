@@ -138,7 +138,11 @@ func New(c Config, engine model.Engine, rule Rule, choice Choice) (*Protocol, er
 	return p, nil
 }
 func (p *Protocol) Protocol() core.ProtocolDescriptor { return p.descriptor }
-func (p *Protocol) PolicyID() string                  { return p.choice.ID() }
+func (p *Protocol) BlockHeight(b core.Block) (uint64, error) {
+	v, err := Unwrap(b)
+	return v.Header.Height, err
+}
+func (p *Protocol) PolicyID() string { return p.choice.ID() }
 func (p *Protocol) EncodeTransaction(t core.Transaction) ([]byte, error) {
 	return p.engine.EncodeTransaction(t)
 }

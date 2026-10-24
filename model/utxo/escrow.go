@@ -20,6 +20,9 @@ func systemOutpoint(domain string, id core.ID) Outpoint {
 	return Outpoint{TransactionID: hash}
 }
 func (e *Engine) Lock(ctx context.Context, parent core.StateReader, lock assetcap.Lock) (model.Transition, error) {
+	if e.maturity != 0 {
+		return model.Transition{}, fmt.Errorf("context-free escrow unavailable with coinbase maturity")
+	}
 	if err := ctx.Err(); err != nil {
 		return model.Transition{}, err
 	}

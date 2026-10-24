@@ -1,0 +1,101 @@
+{
+  "project": "gochainkit-verified",
+  "apiPorts": [
+    28081,
+    28082,
+    28083
+  ],
+  "transfer": "426e8dddce43353ab20909cb5daecba73afc32916fb155a70732983a0fc582ff",
+  "recipient": "6d636f630f018e78423a9586e6c94fd598cae048ac9f8a0bfe541f8bfc49112e",
+  "head": "22e507dc448bcfb330359e3637721a4fc6ce173c0ddabaad340ca5bd231f8614",
+  "checks": [
+    {
+      "check": "three nodes have two peers",
+      "status": "passed"
+    },
+    {
+      "check": "mined rewards mature",
+      "status": "passed"
+    },
+    {
+      "check": "three nodes converge",
+      "status": "passed"
+    },
+    {
+      "check": "all three miners earn rewards",
+      "status": "passed"
+    },
+    {
+      "check": "difficulty retarget active",
+      "status": "passed"
+    },
+    {
+      "check": "signed transfer confirmed on all nodes",
+      "status": "passed"
+    },
+    {
+      "check": "recipient balance agrees on all nodes",
+      "status": "passed"
+    },
+    {
+      "check": "coinbase pays subsidy plus exact fee",
+      "status": "passed"
+    },
+    {
+      "check": "immature coinbase available for validation",
+      "status": "passed"
+    },
+    {
+      "check": "coinbase spend waits until maturity",
+      "status": "passed"
+    },
+    {
+      "check": "mature coinbase spend confirmed on all nodes",
+      "status": "passed"
+    },
+    {
+      "check": "blocks advance after conflicting spend",
+      "status": "passed"
+    },
+    {
+      "check": "double spend never enters canonical chain",
+      "status": "passed"
+    },
+    {
+      "check": "original coinbase spend remains canonical",
+      "status": "passed"
+    },
+    {
+      "check": "invalid signature rejected",
+      "status": "passed"
+    },
+    {
+      "check": "confirmed transaction survives restart",
+      "status": "passed"
+    },
+    {
+      "check": "remaining nodes advance while peer offline",
+      "status": "passed"
+    },
+    {
+      "check": "offline node catches up",
+      "status": "passed"
+    },
+    {
+      "check": "nodes converge after restart",
+      "status": "passed"
+    },
+    {
+      "check": "both network partitions continue mining",
+      "status": "passed"
+    },
+    {
+      "check": "partitioned branches converge by cumulative work",
+      "status": "passed"
+    },
+    {
+      "check": "confirmed transfer remains canonical",
+      "status": "passed"
+    }
+  ]
+}

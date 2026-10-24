@@ -266,7 +266,17 @@ func TestPoWThreeAutomaticMinersConvergeAfterRestart(t *testing.T) {
 	if e := nodes[0].pool.Add(ctx, tx); e != nil {
 		t.Fatal(e)
 	}
-	eventuallyPoW(t, func() bool { _, e := nodes[1].ledger.Transaction(ctx, tx.ID()); return e == nil })
+	// Establish the recovery precondition on every live miner. A transaction
+	// confirmed on only one competing branch may legitimately be detached when
+	// another branch wins; stopping all miners then cannot reconfirm it.
+	eventuallyPoW(t, func() bool {
+		for _, n := range nodes {
+			if _, err := n.ledger.Transaction(ctx, tx.ID()); err != nil {
+				return false
+			}
+		}
+		return true
+	})
 	for _, n := range nodes {
 		n.stop(t)
 	}

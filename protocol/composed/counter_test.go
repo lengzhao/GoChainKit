@@ -32,6 +32,51 @@ func (m counterModel) Execute(ctx context.Context, s core.StateReader, txs []cor
 
 type contextualCounter struct{ counterModel }
 
+type failingContextualModel struct {
+	counterModel
+	err error
+}
+
+func (m failingContextualModel) ExecuteInContext(context.Context, core.StateReader, []core.Transaction, model.ExecutionContext) (model.Transition, error) {
+	return model.Transition{Writes: map[string][]byte{"must-not-commit": {1}}}, m.err
+}
+
+func TestContextualExecutionErrorsAreNeverConvertedToSuccess(t *testing.T) {
+	for _, failure := range []error{errors.New("model storage fault"), context.Canceled,
+		&core.TransactionError{TransactionID: "tx", Disposition: core.TransactionDeferred, Cause: errors.New("not yet executable")},
+		&core.TransactionError{TransactionID: "tx", Disposition: core.TransactionRejected, Cause: errors.New("invalid input")}} {
+		t.Run(failure.Error(), func(t *testing.T) {
+			ctx := context.Background()
+			engine := failingContextualModel{counterModel{testprotocol.New("error-propagation")}, failure}
+			rule, _ := pow.New(pow.Config{})
+			p, err := composed.NewPoW(composed.Config{Network: "error-propagation", GenesisTime: 1700000000}, engine, rule, rule)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ledger, err := storage.NewMemory(storage.MemoryConfig{}, storage.Deps{Protocol: p})
+			if err != nil {
+				t.Fatal(err)
+			}
+			executor, err := composed.NewExecutor(p, ledger)
+			if err != nil {
+				t.Fatal(err)
+			}
+			head, _ := ledger.Head(ctx)
+			parent, _ := ledger.Block(ctx, head)
+			draft, err := p.Draft(ctx, parent, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			snapshot, _ := ledger.Snapshot(ctx, head)
+			defer snapshot.Close()
+			result, err := executor.Execute(ctx, snapshot, draft)
+			if !errors.Is(err, failure) || len(result.Writes) != 0 || result.BlockID != "" {
+				t.Fatalf("model failure became successful execution: result=%+v err=%v", result, err)
+			}
+		})
+	}
+}
+
 func (m contextualCounter) ExecuteInContext(ctx context.Context, s core.StateReader, txs []core.Transaction, env model.ExecutionContext) (model.Transition, error) {
 	if env.Parent() == nil || env.Candidate() == nil || env.History() == nil {
 		panic("missing context")

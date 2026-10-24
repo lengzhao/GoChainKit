@@ -34,6 +34,17 @@ go vet ./...
 go test ./tests/integration -v
 ```
 
+## 三节点 Docker 货币网络
+
+```sh
+docker compose up -d --build --wait
+python3 scripts/devnet-smoke.py
+```
+
+自动生成三个独立节点的加密 P2P 身份和矿工钱包，持续挖矿、传播交易、同步及持久化。UTXO 货币支持签名转账、找零、手续费、确定性 coinbase 系统输出、奖励成熟期、减半和难度调整；按累计工作量选链并处理分叉重组。
+
+API 默认位于本机 8081–8083，钱包命令为 `gochainkit-wallet`。启动、转账、开发参数与完整验收步骤见 [三节点 Docker 网络](docs/docker-devnet.md)。这是采用自身交易/网络格式的独立开发链。
+
 ## 设计文档
 
 - [架构草图](docs/plans/2026-10-17-gochainkit-design.md)
