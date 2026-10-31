@@ -9,6 +9,7 @@ import (
 	valcap "github.com/lengzhao/GoChainKit/cap/validator"
 	choice "github.com/lengzhao/GoChainKit/choice/authority"
 	"github.com/lengzhao/GoChainKit/core"
+	"github.com/lengzhao/GoChainKit/internal/routertest"
 	"github.com/lengzhao/GoChainKit/keystore"
 	"github.com/lengzhao/GoChainKit/model/account"
 	"github.com/lengzhao/GoChainKit/plugins/builder"
@@ -76,7 +77,7 @@ func TestAuthorityShutdownPreservesCommittedFailure(t *testing.T) {
 		t.Fatal(e)
 	}
 	imp, _ := replication.NewImporter(replication.ImportConfig{}, replication.ImportDeps{Rules: p, Ledger: ledger, Executor: ex, Pool: pool})
-	rep, _ := replication.NewSync(replication.SyncConfig{Interval: "1h"}, replication.SyncDeps{Rules: p, Ledger: ledger, Pool: pool, Network: nullPoWNetwork{descriptor: p.Protocol()}, Importer: imp})
+	rep, _ := replication.NewSync(replication.SyncConfig{Interval: "1h"}, replication.SyncDeps{Rules: p, Ledger: ledger, Pool: pool, Router: routertest.Start(t, nullPoWNetwork{descriptor: p.Protocol()}), Network: nullPoWNetwork{descriptor: p.Protocol()}, Importer: imp})
 	c, e := NewAuthority(AuthorityConfig{Interval: "1ms"}, AuthorityDeps{Protocol: p, Ledger: ledger, Builder: b, Importer: imp, Replication: rep, Producer: producer})
 	if e != nil {
 		t.Fatal(e)
@@ -125,7 +126,7 @@ func TestAuthoritySlotBoundaryContinues(t *testing.T) {
 	sel, _ := selector.NewFIFO(selector.FIFOConfig{}, selector.Deps{Protocol: p})
 	b, _ := builder.NewBasic(builder.BasicConfig{MaxTransactionBytes: 4096}, builder.Deps{Protocol: p, Ledger: ledger, Pool: pool, Executor: ex, Selector: sel})
 	imp, _ := replication.NewImporter(replication.ImportConfig{}, replication.ImportDeps{Rules: p, Ledger: ledger, Executor: ex, Pool: pool})
-	rep, _ := replication.NewSync(replication.SyncConfig{Interval: "1h"}, replication.SyncDeps{Rules: p, Ledger: ledger, Pool: pool, Network: nullPoWNetwork{descriptor: p.Protocol()}, Importer: imp}) // Start on member a's slot, then Draft crosses into member b's slot.
+	rep, _ := replication.NewSync(replication.SyncConfig{Interval: "1h"}, replication.SyncDeps{Rules: p, Ledger: ledger, Pool: pool, Router: routertest.Start(t, nullPoWNetwork{descriptor: p.Protocol()}), Network: nullPoWNetwork{descriptor: p.Protocol()}, Importer: imp}) // Start on member a's slot, then Draft crosses into member b's slot.
 	now = 101
 	entered := make(chan struct{})
 	moving := &crossingProducer{AuthorityProducer: producer, advance: func() { now = 102; close(entered) }}

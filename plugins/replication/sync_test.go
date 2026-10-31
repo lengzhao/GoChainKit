@@ -7,6 +7,7 @@ import (
 	"errors"
 	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
 	consensuscap "github.com/lengzhao/GoChainKit/cap/consensus"
+	messagecap "github.com/lengzhao/GoChainKit/cap/message"
 	networkcap "github.com/lengzhao/GoChainKit/cap/network"
 	replicationcap "github.com/lengzhao/GoChainKit/cap/replication"
 	"github.com/lengzhao/GoChainKit/core"
@@ -175,7 +176,7 @@ func TestSyncShutdownJoinsHandlerLocalFailure(t *testing.T) {
 	failure := errors.New("local read failed while stopping")
 	entered, release := make(chan struct{}), make(chan struct{})
 	network := handlerNetwork{installed: make(chan func(context.Context, []byte) ([]byte, error), 1)}
-	p := &chainSync{SyncDeps: SyncDeps{Rules: powTestProtocol{}, Ledger: barrierHeadLedger{entered: entered, release: release, failure: failure}, Pool: powTestPool{}, Network: network}, interval: time.Hour, fatal: make(chan error, 1)}
+	p := &chainSync{SyncDeps: SyncDeps{Rules: powTestProtocol{}, Ledger: barrierHeadLedger{entered: entered, release: release, failure: failure}, Pool: powTestPool{}, Network: network, Router: directRouter{network}}, interval: time.Hour, fatal: make(chan error, 1)}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
@@ -260,7 +261,7 @@ func TestSyncImportMixedAlreadyCommittedRemainsLocal(t *testing.T) {
 		{err: errors.Join(core.ErrAlreadyCommitted)},
 		{err: &replicationcap.LocalServiceError{Cause: errors.Join(core.ErrAlreadyCommitted, failure)}, local: true},
 	} {
-		p := &chainSync{SyncDeps: SyncDeps{Rules: importPageProtocol{}, Ledger: powTestLedger{}, Pool: powTestPool{}, Network: importPageNetwork{}, Importer: importPageFailure{failure: test.err}}}
+		p := &chainSync{SyncDeps: SyncDeps{Rules: importPageProtocol{}, Ledger: powTestLedger{}, Pool: powTestPool{}, Network: importPageNetwork{}, Router: directRouter{importPageNetwork{}}, Importer: importPageFailure{failure: test.err}}}
 		_, err := p.syncPeer(context.Background(), "peer", nil)
 		if test.local {
 			var local *replicationcap.LocalServiceError
@@ -272,3 +273,16 @@ func TestSyncImportMixedAlreadyCommittedRemainsLocal(t *testing.T) {
 		}
 	}
 }
+
+type directRouter struct{ networkcap.Network }
+
+func (r directRouter) Register(_ string, h messagecap.Handler) (messagecap.Registration, error) {
+	return emptyRegistration{}, r.Handle(h)
+}
+func (r directRouter) Request(ctx context.Context, peer, _ string, b []byte) ([]byte, error) {
+	return r.Network.Request(ctx, peer, b)
+}
+
+type emptyRegistration struct{}
+
+func (emptyRegistration) Close() error { return nil }

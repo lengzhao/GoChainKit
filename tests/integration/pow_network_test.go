@@ -8,6 +8,7 @@ import (
 	consensuscap "github.com/lengzhao/GoChainKit/cap/consensus"
 	"github.com/lengzhao/GoChainKit/core"
 	identity "github.com/lengzhao/GoChainKit/identity/libp2p"
+	"github.com/lengzhao/GoChainKit/internal/routertest"
 	"github.com/lengzhao/GoChainKit/internal/testbackend"
 	"github.com/lengzhao/GoChainKit/keystore"
 	runtime "github.com/lengzhao/GoChainKit/node"
@@ -71,7 +72,7 @@ func startPoWNodeMode(t *testing.T, p consensuscap.WorkProtocol, path string, mi
 	if e != nil {
 		t.Fatal(e)
 	}
-	rep, e := replication.NewSync(replication.SyncConfig{Interval: "20ms"}, replication.SyncDeps{Rules: p, Ledger: s, Pool: m, Network: n, Importer: imp})
+	rep, e := replication.NewSync(replication.SyncConfig{Interval: "20ms"}, replication.SyncDeps{Rules: p, Ledger: s, Pool: m, Router: routertest.Start(t, n), Network: n, Importer: imp})
 	if e != nil {
 		t.Fatal(e)
 	}

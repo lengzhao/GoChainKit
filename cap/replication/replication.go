@@ -16,7 +16,8 @@ type BlockImporter interface {
 }
 
 // Replicator owns chain catch-up and transaction propagation, independently of
-// proof production. Exactly one owner installs the Network handler. Run blocks
+// proof production. The shared Router exclusively owns the Network handler; each consumer owns
+// its route registration. Run blocks
 // until cancellation or a local service fault, and releases its workers.
 type Replicator interface {
 	core.ProtocolBound

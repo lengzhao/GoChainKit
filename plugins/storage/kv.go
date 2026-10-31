@@ -7,6 +7,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
+	bodycap "github.com/lengzhao/GoChainKit/cap/body"
 	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
 	capstorage "github.com/lengzhao/GoChainKit/cap/storage"
 	"github.com/lengzhao/GoChainKit/core"
@@ -18,12 +19,15 @@ var buckets = []string{"meta", "blocks", "states", "transactions", "receipts", "
 
 type KVConfig struct{}
 type KVDeps struct {
-	Protocol core.LedgerProtocol   `json:"protocol"`
-	Policy   chaincap.BranchPolicy `json:"policy,omitempty"`
-	Backend  capstorage.Backend    `json:"backend"`
+	Archive      bodycap.TransactionArchive `json:"archive,omitempty"`
+	Materializer bodycap.Materializer       `json:"materializer,omitempty"`
+	Protocol     core.LedgerProtocol        `json:"protocol"`
+	Policy       chaincap.BranchPolicy      `json:"policy,omitempty"`
+	Backend      capstorage.Backend         `json:"backend"`
 }
 type TransactionRecord = core.ConfirmedTransaction
 type KVStore struct {
+	body        *bodyAccess
 	mu          sync.RWMutex
 	owner       *core.LedgerIdentity
 	backend     capstorage.Backend
@@ -45,11 +49,15 @@ func NewKV(_ KVConfig, d KVDeps) (*KVStore, error) {
 	if e := d.Protocol.Protocol().Validate(); e != nil {
 		return nil, e
 	}
+	body, e := newBodyAccess(d.Protocol, d.Archive, d.Materializer)
+	if e != nil {
+		return nil, e
+	}
 	policy, e := resolvePolicy(Deps{Protocol: d.Protocol, Policy: d.Policy})
 	if e != nil {
 		return nil, e
 	}
-	return &KVStore{policy: policy, owner: core.NewLedgerIdentity(), backend: d.Backend, p: d.Protocol}, nil
+	return &KVStore{policy: policy, body: body, owner: core.NewLedgerIdentity(), backend: d.Backend, p: d.Protocol}, nil
 }
 func (s *KVStore) Protocol() core.ProtocolDescriptor { return s.p.Protocol() }
 func encode(v any) ([]byte, error) {
@@ -107,7 +115,7 @@ func (s *KVStore) Start(ctx context.Context) (err error) {
 		s.mu.Unlock()
 		cancel()
 	}()
-	g, e := prepareGenesis(ctx, s.p)
+	g, e := prepareGenesis(ctx, s.p, s.body)
 	if e != nil {
 		return e
 	}
@@ -116,7 +124,7 @@ func (s *KVStore) Start(ctx context.Context) (err error) {
 	wp, _ := s.p.(chaincap.BranchProtocol)
 	isWork := s.policy != nil
 	if isWork {
-		genesisBranch, e = branchGenesis(ctx, wp, s.policy, g)
+		genesisBranch, e = branchGenesis(ctx, wp, s.policy, g, s.body)
 		if e != nil {
 			return e
 		}
@@ -226,7 +234,7 @@ func (s *KVStore) Start(ctx context.Context) (err error) {
 	if e != nil {
 		return e
 	}
-	reader := &KVStore{owner: s.owner, p: s.p, policy: s.policy, db: database}
+	reader := &KVStore{body: s.body, owner: s.owner, p: s.p, policy: s.policy, db: database}
 	head, e := reader.Head(ctx)
 	if e == nil {
 		_, e = reader.Block(ctx, head)
@@ -318,7 +326,7 @@ func (s *KVStore) Block(ctx context.Context, id core.ID) (core.Block, error) {
 	if e != nil {
 		return nil, e
 	}
-	return decodeStoredBlock(s.p, data, id)
+	return decodeAvailableBlock(ctx, s.p, data, id, s.body)
 }
 func (s *KVStore) Receipt(ctx context.Context, id core.ID) (core.Receipt, error) {
 	var r core.Receipt
@@ -382,7 +390,7 @@ func (s *KVStore) Commit(ctx context.Context, parent core.ID, b core.Block, r co
 	if parent != head {
 		return core.ErrConflict
 	}
-	v, e := prepareCommit(ctx, s.p, s, parent, b, r)
+	v, e := prepareCommit(ctx, s.p, s, parent, b, r, s.body)
 	if e != nil {
 		return e
 	}

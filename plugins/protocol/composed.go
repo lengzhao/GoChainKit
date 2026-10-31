@@ -11,9 +11,10 @@ import (
 )
 
 type ComposedConfig struct {
-	Network     string `json:"network"`
-	GenesisTime int64  `json:"genesisTime"`
-	Producer    string `json:"producer"`
+	Network       string `json:"network"`
+	ReferenceBody bool   `json:"referenceBody"`
+	GenesisTime   int64  `json:"genesisTime"`
+	Producer      string `json:"producer"`
 }
 type ComposedDeps struct {
 	Model  model.Engine    `json:"model"`
@@ -31,7 +32,7 @@ func composedConfig(c ComposedConfig) (composed.Config, error) {
 	if e != nil {
 		return composed.Config{}, fmt.Errorf("invalid producer hex: %w", e)
 	}
-	return composed.Config{Network: c.Network, GenesisTime: c.GenesisTime, Producer: producer}, nil
+	return composed.Config{Network: c.Network, ReferenceBody: c.ReferenceBody, GenesisTime: c.GenesisTime, Producer: producer}, nil
 }
 func NewComposed(c ComposedConfig, d ComposedDeps) (core.Protocol, error) {
 	cfg, e := composedConfig(c)

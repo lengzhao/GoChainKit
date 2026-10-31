@@ -5,10 +5,15 @@ import (
 	"context"
 	"crypto/ed25519"
 	"fmt"
+	"github.com/lengzhao/GoChainKit/archive/transactions"
+	"github.com/lengzhao/GoChainKit/body/materializer"
+	"github.com/lengzhao/GoChainKit/body/remote"
 	assetcap "github.com/lengzhao/GoChainKit/cap/asset"
+	bodycap "github.com/lengzhao/GoChainKit/cap/body"
 	"github.com/lengzhao/GoChainKit/cap/model"
 	"github.com/lengzhao/GoChainKit/core"
 	identity "github.com/lengzhao/GoChainKit/identity/libp2p"
+	"github.com/lengzhao/GoChainKit/internal/routertest"
 	"github.com/lengzhao/GoChainKit/internal/testbackend"
 	"github.com/lengzhao/GoChainKit/internal/testprotocol"
 	"github.com/lengzhao/GoChainKit/keystore"
@@ -53,7 +58,23 @@ func eventually(t *testing.T, check func() bool) {
 }
 func startNode(t *testing.T, p *composed.WorkProtocol, path string) *composedNode {
 	t.Helper()
-	s, e := storage.NewKV(storage.KVConfig{}, storage.KVDeps{Backend: testbackend.Bolt(t, filepath.Join(path, "chain.db")), Protocol: p})
+	sd := storage.KVDeps{Backend: testbackend.Bolt(t, filepath.Join(path, "chain.db")), Protocol: p}
+	var archive *transactions.Archive
+	var local *materializer.Materializer
+	if p.RequiresMaterialization() {
+		var e error
+		archive, e = transactions.New(transactions.Config{}, transactions.Deps{Protocol: p, Backend: testbackend.Bolt(t, filepath.Join(path, "archive.db"))})
+		if e != nil {
+			t.Fatal(e)
+		}
+		local, e = materializer.New(materializer.Config{}, materializer.Deps{Protocol: p, References: p, Sources: []bodycap.TransactionSource{archive}})
+		if e != nil {
+			t.Fatal(e)
+		}
+		sd.Archive = archive
+		sd.Materializer = local
+	}
+	s, e := storage.NewKV(storage.KVConfig{}, sd)
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -81,12 +102,30 @@ func startNode(t *testing.T, p *composed.WorkProtocol, path string) *composedNod
 	if e != nil {
 		t.Fatal(e)
 	}
+	router := routertest.Start(t, network)
+	resources := []core.Lifecycle{network}
+	var fetch bodycap.Materializer
+	if archive != nil {
+		source, e := remote.New(remote.Config{}, remote.Deps{Protocol: p, Network: network, Router: router})
+		if e != nil {
+			t.Fatal(e)
+		}
+		fetch, e = materializer.New(materializer.Config{}, materializer.Deps{Protocol: p, References: p, Sources: []bodycap.TransactionSource{archive, source}})
+		if e != nil {
+			t.Fatal(e)
+		}
+		server, e := remote.NewServer(remote.Config{}, remote.ServerDeps{Protocol: p, Source: archive, Router: router})
+		if e != nil {
+			t.Fatal(e)
+		}
+		resources = []core.Lifecycle{archive, s, network, server}
+	}
 	mining := false
-	imp, e := replication.NewImporter(replication.ImportConfig{}, replication.ImportDeps{Rules: p, Ledger: s, Executor: executor, Pool: pool})
+	imp, e := replication.NewImporter(replication.ImportConfig{}, replication.ImportDeps{Rules: p, Ledger: s, Executor: executor, Pool: pool, Materializer: fetch})
 	if e != nil {
 		t.Fatal(e)
 	}
-	rep, e := replication.NewSync(replication.SyncConfig{Interval: "20ms"}, replication.SyncDeps{Rules: p, Ledger: s, Pool: pool, Network: network, Importer: imp})
+	rep, e := replication.NewSync(replication.SyncConfig{Interval: "20ms"}, replication.SyncDeps{Rules: p, Ledger: s, Pool: pool, Router: router, Network: network, Importer: imp})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -94,7 +133,7 @@ func startNode(t *testing.T, p *composed.WorkProtocol, path string) *composedNod
 	if e != nil {
 		t.Fatal(e)
 	}
-	runner, e := runtime.NewRunner(runtime.RunnerConfig{ShutdownTimeout: "5s"}, runtime.RunnerDeps{Ledger: s, Host: host, Consensus: consensus, Resources: []core.Lifecycle{network}})
+	runner, e := runtime.NewRunner(runtime.RunnerConfig{ShutdownTimeout: "5s"}, runtime.RunnerDeps{Ledger: s, Host: host, Consensus: consensus, Resources: resources})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -230,4 +269,50 @@ func TestComposedAccountUTXORealNetworkAndRestart(t *testing.T) {
 func newPeerIdentity() *identity.Provider {
 	p, _ := identity.New(identity.Config{KeyID: "p2p"}, identity.Deps{Store: keystore.NewMemory()})
 	return p
+}
+
+func TestReferenceNetworkFetchWithoutPoolAndOfflineReopen(t *testing.T) {
+	ctx := context.Background()
+	engine := identityCounter{counterModel{testprotocol.New("reference-network")}}
+	rule, _ := pow.New(pow.Config{})
+	p, e := composed.NewPoW(composed.Config{Network: "reference-network", GenesisTime: 1700000000, ReferenceBody: true}, engine, rule, rule)
+	if e != nil {
+		t.Fatal(e)
+	}
+	root := t.TempDir()
+	a := startNode(t, p, filepath.Join(root, "a"))
+	b := startNode(t, p, filepath.Join(root, "b"))
+	tx := testprotocol.Tx{Label: "increment"}
+	if e = a.pool.Add(ctx, tx); e != nil {
+		t.Fatal(e)
+	}
+	head, _ := a.ledger.Head(ctx)
+	block, r, e := a.builder.Build(ctx, head)
+	if e != nil {
+		t.Fatal(e)
+	}
+	block, e = p.Seal(ctx, block)
+	if e != nil {
+		t.Fatal(e)
+	}
+	r.BlockID = block.ID()
+	if _, e = a.ledger.Import(ctx, head, block, r); e != nil {
+		t.Fatal(e)
+	}
+	a.pool.Remove(ctx, []core.ID{tx.ID()})
+	if e = a.network.Connect(ctx, b.network.Addresses()[0]); e != nil {
+		t.Fatal(e)
+	}
+	eventually(t, func() bool { h, _ := b.ledger.Head(ctx); return h == block.ID() })
+	a.stop(t)
+	b.stop(t)
+	b = startNode(t, p, filepath.Join(root, "b"))
+	got, e := b.ledger.Block(ctx, block.ID())
+	if e != nil {
+		t.Fatal(e)
+	}
+	txs, e := p.Transactions(got)
+	if e != nil || len(txs) != 1 || txs[0].ID() != tx.ID() {
+		t.Fatal(txs, e)
+	}
 }

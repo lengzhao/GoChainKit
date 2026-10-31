@@ -4,16 +4,18 @@ package node
 import (
 	"context"
 	"fmt"
+	bodycap "github.com/lengzhao/GoChainKit/cap/body"
 	"github.com/lengzhao/GoChainKit/core"
 	"time"
 )
 
 type CoordinatorDeps struct {
-	Protocol core.CoordinatorProtocol `json:"protocol"`
-	Ledger   core.Ledger              `json:"ledger"`
-	Builder  core.BlockBuilder        `json:"builder"`
-	Executor core.Executor            `json:"executor"`
-	Pool     core.Mempool             `json:"pool"`
+	Materializer bodycap.Materializer     `json:"materializer,omitempty"`
+	Protocol     core.CoordinatorProtocol `json:"protocol"`
+	Ledger       core.Ledger              `json:"ledger"`
+	Builder      core.BlockBuilder        `json:"builder"`
+	Executor     core.Executor            `json:"executor"`
+	Pool         core.Mempool             `json:"pool"`
 }
 
 // Coordinator serializes host operations with a cancellation-aware gate. Backends
@@ -33,6 +35,11 @@ func NewCoordinator(d CoordinatorDeps) (*Coordinator, error) {
 	if d.Ledger.LedgerID() == nil || d.Builder.LedgerID() != d.Ledger.LedgerID() {
 		return nil, core.ErrLedgerMismatch
 	}
+	if d.Materializer != nil {
+		if err := core.RequireCompatible(d.Protocol.Protocol(), d.Materializer); err != nil {
+			return nil, err
+		}
+	}
 	return &Coordinator{gate: make(chan struct{}, 1), deps: d}, nil
 }
 func (c *Coordinator) acquire(ctx context.Context) error {
@@ -48,7 +55,7 @@ func (c *Coordinator) acquire(ctx context.Context) error {
 	}
 }
 func (c *Coordinator) release() { <-c.gate }
-func (c *Coordinator) freeze(b core.Block) (core.Block, error) {
+func (c *Coordinator) freeze(ctx context.Context, b core.Block) (core.Block, error) {
 	if b == nil || b.ID() == "" {
 		return nil, fmt.Errorf("empty block")
 	}
@@ -63,6 +70,27 @@ func (c *Coordinator) freeze(b core.Block) (core.Block, error) {
 	if copy == nil || copy.ID() != b.ID() {
 		return nil, fmt.Errorf("block codec changed identity")
 	}
+	if refs, ok := c.deps.Protocol.(bodycap.References); ok {
+		required := true
+		if mode, ok := c.deps.Protocol.(bodycap.Requirement); ok {
+			required = mode.RequiresMaterialization()
+		}
+		if required {
+			if txs, e := c.deps.Protocol.Transactions(b); e == nil {
+				copy, err = refs.Attach(copy, txs)
+			} else if c.deps.Materializer != nil {
+				copy, err = c.deps.Materializer.Materialize(ctx, copy)
+			} else {
+				return nil, e
+			}
+			if err != nil {
+				return nil, err
+			}
+			if copy == nil || copy.ID() != b.ID() {
+				return nil, fmt.Errorf("hydration changed identity")
+			}
+		}
+	}
 	return copy, nil
 }
 func (c *Coordinator) Propose(ctx context.Context) (core.Block, error) {
@@ -74,7 +102,7 @@ func (c *Coordinator) Propose(ctx context.Context) (core.Block, error) {
 	if err != nil {
 		return nil, err
 	}
-	return c.freeze(block)
+	return c.freeze(ctx, block)
 }
 func (c *Coordinator) execute(ctx context.Context, b core.Block) (core.ExecutionResult, error) {
 	fail := func(err error) (core.ExecutionResult, error) { return core.ExecutionResult{}, err }
@@ -118,7 +146,7 @@ func (c *Coordinator) Validate(ctx context.Context, b core.Block) error {
 		return err
 	}
 	defer c.release()
-	copy, err := c.freeze(b)
+	copy, err := c.freeze(ctx, b)
 	if err != nil {
 		return err
 	}
@@ -130,7 +158,7 @@ func (c *Coordinator) Commit(ctx context.Context, b core.Block) error {
 		return err
 	}
 	defer c.release()
-	copy, err := c.freeze(b)
+	copy, err := c.freeze(ctx, b)
 	if err != nil {
 		return err
 	}

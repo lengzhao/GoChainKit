@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	messagecap "github.com/lengzhao/GoChainKit/cap/message"
 	networkcap "github.com/lengzhao/GoChainKit/cap/network"
 	replicationcap "github.com/lengzhao/GoChainKit/cap/replication"
 	"github.com/lengzhao/GoChainKit/core"
@@ -28,7 +29,11 @@ type SyncLedger interface {
 	core.TransactionStore
 	core.LedgerBound
 }
+
+const SyncRoute = "chain/sync/v1"
+
 type SyncDeps struct {
+	Router   messagecap.MessageRouter     `json:"router"`
 	Rules    SyncProtocol                 `json:"protocol"`
 	Ledger   SyncLedger                   `json:"ledger"`
 	Pool     core.Mempool                 `json:"pool"`
@@ -56,11 +61,16 @@ func NewSync(c SyncConfig, d SyncDeps) (replicationcap.Replicator, error) {
 	if e != nil || interval <= 0 {
 		return nil, fmt.Errorf("positive sync interval required")
 	}
-	if d.Rules == nil || d.Ledger == nil || d.Pool == nil || d.Network == nil || d.Importer == nil {
+	if d.Rules == nil || d.Ledger == nil || d.Pool == nil || d.Network == nil || d.Importer == nil || d.Router == nil {
 		return nil, fmt.Errorf("sync dependencies required")
 	}
 	if e = core.RequireCompatible(d.Rules.Protocol(), d.Ledger, d.Pool, d.Network, d.Importer); e != nil {
 		return nil, e
+	}
+	if bound, ok := d.Router.(core.ProtocolBound); ok {
+		if e = core.RequireCompatible(d.Rules.Protocol(), bound); e != nil {
+			return nil, e
+		}
 	}
 	if d.Ledger.LedgerID() == nil || d.Importer.LedgerID() != d.Ledger.LedgerID() {
 		return nil, core.ErrLedgerMismatch
@@ -93,9 +103,11 @@ func (p *chainSync) Run(ctx context.Context) (returnErr error) {
 		defer p.fatalMu.Unlock()
 		returnErr = errors.Join(append([]error{returnErr}, p.fatalErrors...)...)
 	}()
-	if e := p.Network.Handle(p.serve); e != nil {
+	registration, e := p.Router.Register(SyncRoute, p.serve)
+	if e != nil {
 		return e
 	}
+	defer registration.Close()
 	tick := time.NewTicker(p.interval)
 	defer tick.Stop()
 
@@ -123,7 +135,7 @@ func (p *chainSync) Run(ctx context.Context) (returnErr error) {
 }
 
 // serve links request cancellation with service shutdown and rejects new work
-// after Run stops. Network retains the registered handler until its own Stop.
+// after Run stops. Run revokes its route and joins active handlers.
 func (p *chainSync) serve(ctx context.Context, raw []byte) ([]byte, error) {
 	p.runMu.Lock()
 	if !p.accepting {
@@ -280,7 +292,7 @@ func (p *chainSync) syncPeer(ctx context.Context, peer string, cursor []byte) ([
 	if e != nil {
 		return cursor, e
 	}
-	raw, e = p.Network.Request(ctx, peer, raw)
+	raw, e = p.Router.Request(ctx, peer, SyncRoute, raw)
 	if e != nil {
 		return cursor, e
 	}

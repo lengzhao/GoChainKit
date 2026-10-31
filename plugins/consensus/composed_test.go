@@ -5,6 +5,7 @@ import (
 	"errors"
 	consensuscap "github.com/lengzhao/GoChainKit/cap/consensus"
 	"github.com/lengzhao/GoChainKit/core"
+	"github.com/lengzhao/GoChainKit/internal/routertest"
 	"github.com/lengzhao/GoChainKit/model/account"
 	"github.com/lengzhao/GoChainKit/plugins/builder"
 	"github.com/lengzhao/GoChainKit/plugins/mempool"
@@ -53,7 +54,7 @@ func TestPoWMinerExplicitlySealsFinalizedProposal(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	rep, e := replication.NewSync(replication.SyncConfig{Interval: "1h"}, replication.SyncDeps{Rules: p, Ledger: ledger, Pool: pool, Network: nullPoWNetwork{descriptor: p.Protocol()}, Importer: imp})
+	rep, e := replication.NewSync(replication.SyncConfig{Interval: "1h"}, replication.SyncDeps{Rules: p, Ledger: ledger, Pool: pool, Router: routertest.Start(t, nullPoWNetwork{descriptor: p.Protocol()}), Network: nullPoWNetwork{descriptor: p.Protocol()}, Importer: imp})
 	if e != nil {
 		t.Fatal(e)
 	}

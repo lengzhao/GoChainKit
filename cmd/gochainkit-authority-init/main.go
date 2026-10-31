@@ -124,12 +124,13 @@ func configuration(dir string, genesis int64, member valcap.Member) map[string]a
 		"identity":    plugin("identity/libp2p", map[string]any{"keyID": "p2p"}, m("store", "keys")),
 		"network":     plugin("network/libp2p", map[string]any{"listen": []string{"/ip4/127.0.0.1/tcp/0"}, "seeds": []string{}}, m("protocol", "protocol", "identity", "identity")),
 		"importer":    plugin("importer/branch", nil, m("protocol", "protocol", "ledger", "ledger", "executor", "executor", "pool", "pool")),
-		"replication": plugin("sync/chain", map[string]any{"interval": "200ms"}, m("protocol", "protocol", "ledger", "ledger", "pool", "pool", "network", "network", "importer", "importer")),
+		"router":      plugin("message/router", map[string]any{}, m("network", "network")),
+		"replication": plugin("sync/chain", map[string]any{"interval": "200ms"}, m("protocol", "protocol", "ledger", "ledger", "pool", "pool", "network", "network", "router", "router", "importer", "importer")),
 		"consensus":   plugin("consensus/authority", map[string]any{"interval": "200ms"}, m("protocol", "protocol", "ledger", "ledger", "builder", "builder", "importer", "importer", "replication", "replication", "producer", "producer")),
 		"api-query":   plugin("api/query", nil, m("protocol", "protocol", "ledger", "ledger", "pool", "pool")),
 		"api-model":   plugin("api/account", nil, m("protocol", "protocol", "query", "api-query")),
 		"api":         plugin("api/http", map[string]any{"listen": "127.0.0.1:0"}, map[string]any{"query": "api-query", "network": "network", "modules": []string{"api-model"}}),
-		"node":        plugin("node/default", map[string]any{"shutdownTimeout": "5s"}, map[string]any{"ledger": "ledger", "host": "host", "consensus": "consensus", "resources": []string{"network", "api"}, "workers": []string{"api"}}),
+		"node":        plugin("node/default", map[string]any{"shutdownTimeout": "5s"}, map[string]any{"ledger": "ledger", "host": "host", "consensus": "consensus", "resources": []string{"network", "router", "api"}, "workers": []string{"api"}}),
 	}
 	return map[string]any{"root": "node", "plugins": p}
 }

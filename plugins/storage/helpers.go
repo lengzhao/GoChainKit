@@ -64,7 +64,7 @@ func decodeStoredTransaction(p core.LedgerProtocol, data []byte, id core.ID) (co
 	}
 	return t, nil
 }
-func prepareGenesis(ctx context.Context, p core.LedgerProtocol) (preparedCommit, error) {
+func prepareGenesis(ctx context.Context, p core.LedgerProtocol, access ...*bodyAccess) (preparedCommit, error) {
 	b, s, e := p.Genesis(ctx)
 	if e != nil {
 		return preparedCommit{}, e
@@ -76,13 +76,13 @@ func prepareGenesis(ctx context.Context, p core.LedgerProtocol) (preparedCommit,
 	if e != nil {
 		return preparedCommit{}, e
 	}
-	if _, e = decodeStoredBlock(p, data, b.ID()); e != nil {
+	if _, e = decodeAvailableBlock(ctx, p, data, b.ID(), access...); e != nil {
 		return preparedCommit{}, e
 	}
 	root, e := p.StateCommitment(ctx, s)
 	return preparedCommit{ID: b.ID(), Block: bytes.Clone(data), State: copyState(s), Root: root}, e
 }
-func prepareCommit(ctx context.Context, p core.LedgerProtocol, chain core.LedgerReader, parent core.ID, b core.Block, r core.ExecutionResult) (preparedCommit, error) {
+func prepareCommit(ctx context.Context, p core.LedgerProtocol, chain core.LedgerReader, parent core.ID, b core.Block, r core.ExecutionResult, access ...*bodyAccess) (preparedCommit, error) {
 	bad := func(e error) (preparedCommit, error) { return preparedCommit{}, e }
 	if e := ctx.Err(); e != nil {
 		return bad(e)
@@ -114,11 +114,25 @@ func prepareCommit(ctx context.Context, p core.LedgerProtocol, chain core.Ledger
 	if root != r.StateRoot {
 		return bad(fmt.Errorf("state root mismatch"))
 	}
+	if a := firstBody(access); a != nil {
+		if e = p.ValidateBlock(ctx, chain, previous, b, r); e != nil {
+			return bad(e)
+		}
+		txs, e := p.Transactions(b)
+		if e != nil {
+			return bad(e)
+		}
+		for _, tx := range txs {
+			if e = a.archive.Put(ctx, tx); e != nil {
+				return bad(e)
+			}
+		}
+	}
 	data, e := p.EncodeBlock(b)
 	if e != nil {
 		return bad(e)
 	}
-	b, e = decodeStoredBlock(p, data, b.ID())
+	b, e = decodeAvailableBlock(ctx, p, data, b.ID(), access...)
 	if e != nil {
 		return bad(e)
 	}

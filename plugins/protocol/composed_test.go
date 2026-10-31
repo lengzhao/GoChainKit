@@ -32,9 +32,10 @@ plugins:
   identity: {use: identity/libp2p, config: {keyID: p2p}, deps: {store: keys}}
   network: {use: network/libp2p, config: {listen: [/ip4/127.0.0.1/tcp/0], seeds: []}, deps: {protocol: protocol, identity: identity}}
   importer: {use: importer/branch, deps: {protocol: protocol, ledger: ledger, executor: executor, pool: pool}}
-  replication: {use: sync/chain, config: {interval: 1s}, deps: {protocol: protocol, ledger: ledger, pool: pool, network: network, importer: importer}}
+  router: {use: message/router, deps: {network: network}}
+  replication: {use: sync/chain, config: {interval: 1s}, deps: {protocol: protocol, ledger: ledger, pool: pool, network: network, router: router, importer: importer}}
   consensus: {use: consensus/pow, config: {interval: 1s}, deps: {protocol: protocol, ledger: ledger, builder: builder, importer: importer, replication: replication}}
-  node: {use: node/default, config: {shutdownTimeout: 5s}, deps: {ledger: ledger, host: host, consensus: consensus, resources: [network]}}
+  node: {use: node/default, config: {shutdownTimeout: 5s}, deps: {ledger: ledger, host: host, consensus: consensus, resources: [network, router]}}
 `, model, filepath.Join(t.TempDir(), "chain.db"))
 			node, results, e := assembly.Load(context.Background(), strings.NewReader(cfg))
 			if e != nil {

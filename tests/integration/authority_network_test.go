@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
+	"github.com/lengzhao/GoChainKit/internal/routertest"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -129,7 +130,7 @@ func startAuthorityNode(t *testing.T, path string, producer int, clock func() ti
 	must(e)
 	imp, e := replication.NewImporter(replication.ImportConfig{}, replication.ImportDeps{Rules: p, Ledger: s, Executor: ex, Pool: m})
 	must(e)
-	rep, e := replication.NewSync(replication.SyncConfig{Interval: "10ms"}, replication.SyncDeps{Rules: p, Ledger: s, Pool: m, Network: n, Importer: imp})
+	rep, e := replication.NewSync(replication.SyncConfig{Interval: "10ms"}, replication.SyncDeps{Rules: p, Ledger: s, Pool: m, Router: routertest.Start(t, n), Network: n, Importer: imp})
 	must(e)
 	var signing consensus.AuthorityProducer
 	if producer >= 0 {

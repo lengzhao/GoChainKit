@@ -64,8 +64,9 @@ func resolvePolicy(d Deps) (chaincap.BranchPolicy, error) {
 // readOnlyHistory intentionally hides concrete ledger mutation and lifecycle APIs.
 type readOnlyHistory struct{ core.ChainStore }
 type genesisHistory struct {
-	p chaincap.BranchProtocol
-	b core.Block
+	body *bodyAccess
+	p    chaincap.BranchProtocol
+	b    core.Block
 }
 
 func (v genesisHistory) Protocol() core.ProtocolDescriptor         { return v.p.Protocol() }
@@ -81,7 +82,7 @@ func (v genesisHistory) Block(ctx context.Context, id core.ID) (core.Block, erro
 	if e != nil {
 		return nil, e
 	}
-	return v.p.DecodeBlock(data)
+	return decodeAvailableBlock(ctx, v.p, data, v.b.ID(), v.body)
 }
 func (v genesisHistory) Receipt(ctx context.Context, _ core.ID) (core.Receipt, error) {
 	if e := ctx.Err(); e != nil {
