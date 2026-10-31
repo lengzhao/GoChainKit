@@ -115,3 +115,35 @@ func TestRejectForeignResourcesAndWorkers(t *testing.T) {
 		}
 	}
 }
+
+type resourceLedger struct {
+	boundLedger
+	testResource
+}
+
+func TestExplicitLedgerResourceOrder(t *testing.T) {
+	events := []string{}
+	owner := core.NewLedgerIdentity()
+	ledger := &resourceLedger{boundLedger: boundLedger{owner: owner}, testResource: testResource{events: &events, name: "ledger"}}
+	archive := &testResource{events: &events, name: "archive"}
+	n, e := NewRunner(RunnerConfig{}, RunnerDeps{Ledger: ledger, Host: boundHost{owner: owner}, Consensus: noConsensus{}, Resources: []Lifecycle{archive, ledger}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	_ = n.Run(context.Background())
+	want := []string{"start archive", "start ledger", "stop ledger", "stop archive"}
+	if !reflect.DeepEqual(events, want) {
+		t.Fatalf("%v", events)
+	}
+}
+
+func TestJoinedShutdownCancellationIsClean(t *testing.T) {
+	for _, e := range []error{errors.Join(context.Canceled), errors.Join(context.Canceled, context.DeadlineExceeded)} {
+		if !pureCancellation(e) {
+			t.Fatalf("pure joined shutdown misclassified: %v", e)
+		}
+	}
+	if pureCancellation(errors.Join(context.Canceled, errors.New("disk"))) {
+		t.Fatal("mixed fault discarded")
+	}
+}

@@ -57,11 +57,18 @@ func NewRunner(cfg RunnerConfig, d RunnerDeps) (core.Node, error) {
 			return nil, fmt.Errorf("node: positive shutdown timeout required")
 		}
 	}
-	resources := []Lifecycle{}
+	resources := append([]Lifecycle(nil), d.Resources...)
 	if resource, ok := d.Ledger.(Lifecycle); ok {
-		resources = append(resources, resource)
+		explicit := false
+		for _, r := range resources {
+			if r != nil && reflect.TypeOf(r).Comparable() && r == resource {
+				explicit = true
+			}
+		}
+		if !explicit {
+			resources = append([]Lifecycle{resource}, resources...)
+		}
 	}
-	resources = append(resources, d.Resources...)
 	for _, r := range resources {
 		if r == nil || !reflect.TypeOf(r).Comparable() || isNil(r) {
 			return nil, fmt.Errorf("node: resource must have comparable nonnil identity")
@@ -153,6 +160,18 @@ func pureCancellation(err error) bool {
 	}
 	if _, ok := err.(*core.CommittedError); ok {
 		return false
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		children := joined.Unwrap()
+		if len(children) == 0 {
+			return false
+		}
+		for _, child := range children {
+			if !pureCancellation(child) {
+				return false
+			}
+		}
+		return true
 	}
 	if wrapped, ok := err.(interface{ Unwrap() error }); ok {
 		return pureCancellation(wrapped.Unwrap())

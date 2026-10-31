@@ -20,10 +20,11 @@ import (
 )
 
 type Config struct {
-	Network     string
-	GenesisTime int64
-	Producer    []byte
-	Clock       func() time.Time
+	Network       string
+	ReferenceBody bool
+	GenesisTime   int64
+	Producer      []byte
+	Clock         func() time.Time
 }
 type Protocol struct {
 	cfg        Config
@@ -67,6 +68,13 @@ func clone(e Envelope) Envelope {
 			txs[i] = bytes.Clone(tx)
 		}
 		e.Transactions = txs
+	}
+	if e.References != nil {
+		refs := make([][]byte, len(e.References))
+		for i, v := range e.References {
+			refs[i] = bytes.Clone(v)
+		}
+		e.References = refs
 	}
 	return e
 }
@@ -128,6 +136,9 @@ func New(c Config, engine model.Engine, rule Rule, choice Choice) (*Protocol, er
 	if e != nil {
 		return nil, e
 	}
+	if c.ReferenceBody {
+		bindingData = append(bindingData, []byte("/reference-body/v1")...)
+	}
 	binding := DoubleHash(bindingData)
 	p := &Protocol{cfg: c, engine: engine, economics: economics, currency: currency, rule: rule, choice: choice, binding: binding, state: state, descriptor: core.ProtocolDescriptor{Name: "composed", Version: "1/" + hex.EncodeToString(binding), Network: c.Network}}
 	p.genesis = Envelope{Header: Header{Version: 1, Binding: bytes.Clone(binding), Timestamp: c.GenesisTime, StateRoot: root, TransactionsRoot: transactionRoot(nil), ReceiptsRoot: receiptRoot(nil)}}
@@ -157,6 +168,9 @@ func (p *Protocol) EncodeBlock(b core.Block) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if p.cfg.ReferenceBody {
+		e.Transactions = nil
+	}
 	return json.Marshal(e)
 }
 func (p *Protocol) DecodeBlock(raw []byte) (core.Block, error) {
@@ -170,6 +184,9 @@ func (p *Protocol) DecodeBlock(raw []byte) (core.Block, error) {
 	if !bytes.Equal(e.Header.Binding, p.binding) {
 		return nil, fmt.Errorf("foreign chain binding")
 	}
+	if p.cfg.ReferenceBody && e.Transactions != nil || !p.cfg.ReferenceBody && len(e.References) != 0 {
+		return nil, fmt.Errorf("unexpected body format")
+	}
 	return Wrap(e)
 }
 func (p *Protocol) Transactions(b core.Block) ([]core.Transaction, error) {
@@ -177,10 +194,18 @@ func (p *Protocol) Transactions(b core.Block) ([]core.Transaction, error) {
 	if err != nil {
 		return nil, err
 	}
+	if p.cfg.ReferenceBody && len(e.Transactions) != len(e.References) {
+		return nil, fmt.Errorf("reference body unavailable")
+	}
 	out := make([]core.Transaction, len(e.Transactions))
 	for i, data := range e.Transactions {
 		out[i], err = p.engine.DecodeTransaction(bytes.Clone(data))
 		if err != nil {
+			return nil, err
+		}
+	}
+	if p.cfg.ReferenceBody {
+		if _, err = p.Attach(b, out); err != nil {
 			return nil, err
 		}
 	}
@@ -224,8 +249,11 @@ func (p *Protocol) Draft(ctx context.Context, parent core.Block, txs []core.Tran
 			return nil, e
 		}
 		b.Transactions = append(b.Transactions, bytes.Clone(raw))
+		if p.cfg.ReferenceBody {
+			b.References = append(b.References, []byte(t.ID()))
+		}
 	}
-	b.Header.TransactionsRoot = transactionRoot(b.Transactions)
+	b.Header.TransactionsRoot = p.bodyRoot(b)
 	b.Header.Consensus, e = p.rule.Draft(ctx, old, b.Header)
 	if e != nil {
 		return nil, e
@@ -273,7 +301,7 @@ func (p *Protocol) common(ctx context.Context, parent, b core.Block) error {
 	if old.Header.Height == math.MaxUint64 || v.Header.Height != old.Header.Height+1 || core.ID(string(v.Header.Parent)) != parent.ID() {
 		return core.ErrConflict
 	}
-	if v.Header.Version != 1 || !bytes.Equal(v.Header.Binding, p.binding) || !bytes.Equal(old.Header.Binding, p.binding) || !bytes.Equal(transactionRoot(v.Transactions), v.Header.TransactionsRoot) {
+	if v.Header.Version != 1 || !bytes.Equal(v.Header.Binding, p.binding) || !bytes.Equal(old.Header.Binding, p.binding) || !bytes.Equal(p.bodyRoot(v), v.Header.TransactionsRoot) {
 		return fmt.Errorf("invalid composed header")
 	}
 	txs, e := p.Transactions(b)
@@ -405,3 +433,64 @@ func (p *WorkProtocol) Seal(ctx context.Context, b core.Block) (core.Block, erro
 func (p *Protocol) ExecutionModel() model.Engine { return p.engine }
 
 var _ model.Provider = (*Protocol)(nil)
+
+// RequiresMaterialization distinguishes reference mode from the full-body default.
+func (p *Protocol) RequiresMaterialization() bool { return p.cfg.ReferenceBody }
+func (p *Protocol) bodyRoot(e Envelope) []byte {
+	if p.cfg.ReferenceBody {
+		return transactionRoot(e.References)
+	}
+	return transactionRoot(e.Transactions)
+}
+func (p *Protocol) References(b core.Block) ([]core.ID, error) {
+	if !p.cfg.ReferenceBody {
+		return nil, fmt.Errorf("protocol does not use references")
+	}
+	e, err := Unwrap(b)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(e.Header.Binding, p.binding) || !bytes.Equal(p.bodyRoot(e), e.Header.TransactionsRoot) {
+		return nil, fmt.Errorf("invalid reference commitment")
+	}
+	out := make([]core.ID, len(e.References))
+	for i, v := range e.References {
+		if len(v) == 0 {
+			return nil, fmt.Errorf("empty transaction reference")
+		}
+		out[i] = core.ID(string(v))
+	}
+	return out, nil
+}
+func (p *Protocol) Attach(b core.Block, txs []core.Transaction) (core.Block, error) {
+	refs, err := p.References(b)
+	if err != nil {
+		return nil, err
+	}
+	if len(refs) != len(txs) {
+		return nil, fmt.Errorf("incomplete reference body")
+	}
+	e, _ := Unwrap(b)
+	e.Transactions = nil
+	for i, t := range txs {
+		if t == nil || t.ID() != refs[i] {
+			return nil, fmt.Errorf("reference identity mismatch")
+		}
+		if err = p.engine.ValidateTransaction(context.Background(), t); err != nil {
+			return nil, err
+		}
+		raw, err := p.engine.EncodeTransaction(t)
+		if err != nil {
+			return nil, err
+		}
+		frozen, err := p.engine.DecodeTransaction(raw)
+		if err != nil {
+			return nil, err
+		}
+		if frozen == nil || frozen.ID() != refs[i] {
+			return nil, fmt.Errorf("reference codec identity mismatch")
+		}
+		e.Transactions = append(e.Transactions, bytes.Clone(raw))
+	}
+	return Wrap(e)
+}

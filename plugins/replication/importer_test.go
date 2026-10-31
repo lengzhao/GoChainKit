@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	bodycap "github.com/lengzhao/GoChainKit/cap/body"
 	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
 	consensuscap "github.com/lengzhao/GoChainKit/cap/consensus"
 	replicationcap "github.com/lengzhao/GoChainKit/cap/replication"
@@ -269,6 +270,30 @@ func TestSupervisedHistoryMixedMissingRemainsLocal(t *testing.T) {
 		var local *replicationcap.LocalServiceError
 		if !errors.As(err, &local) || !errors.Is(err, failure) {
 			t.Fatalf("local history error hidden by NotFound: %v", err)
+		}
+	}
+}
+
+type coldRules struct{ importRules }
+
+func (coldRules) Transactions(core.Block) ([]core.Transaction, error) { return nil, core.ErrNotFound }
+
+type failedMaterializer struct {
+	bodycap.Materializer
+	failure error
+}
+
+func (m failedMaterializer) Materialize(context.Context, core.Block) (core.Block, error) {
+	return nil, m.failure
+}
+func TestImporterHydrationLocalFailureClassification(t *testing.T) {
+	disk := errors.New("archive disk fault")
+	for _, failure := range []error{errors.Join(bodycap.ErrUnavailable, disk), core.ErrNotFound} {
+		imp := &branchImporter{ImportDeps: ImportDeps{Rules: coldRules{}, Materializer: failedMaterializer{failure: failure}}}
+		e := imp.Import(context.Background(), powTestBlock("cold"), nil)
+		var local *replicationcap.LocalServiceError
+		if errors.Is(failure, bodycap.ErrUnavailable) != errors.As(e, &local) {
+			t.Fatalf("wrong classification: %v", e)
 		}
 	}
 }

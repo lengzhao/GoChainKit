@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	bodycap "github.com/lengzhao/GoChainKit/cap/body"
 	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
 	"github.com/lengzhao/GoChainKit/core"
 	"github.com/lengzhao/pluginkit"
@@ -13,10 +14,13 @@ import (
 
 type MemoryConfig struct{}
 type Deps struct {
-	Protocol core.LedgerProtocol   `json:"protocol"`
-	Policy   chaincap.BranchPolicy `json:"policy,omitempty"`
+	Archive      bodycap.TransactionArchive `json:"archive,omitempty"`
+	Materializer bodycap.Materializer       `json:"materializer,omitempty"`
+	Protocol     core.LedgerProtocol        `json:"protocol"`
+	Policy       chaincap.BranchPolicy      `json:"policy,omitempty"`
 }
 type MemoryStore struct {
+	body         *bodyAccess
 	mu           sync.RWMutex
 	owner        *core.LedgerIdentity
 	p            core.LedgerProtocol
@@ -38,18 +42,22 @@ func NewMemory(_ MemoryConfig, d Deps) (*MemoryStore, error) {
 	if e := d.Protocol.Protocol().Validate(); e != nil {
 		return nil, e
 	}
+	body, e := newBodyAccess(d.Protocol, d.Archive, d.Materializer)
+	if e != nil {
+		return nil, e
+	}
 	policy, e := resolvePolicy(d)
 	if e != nil {
 		return nil, e
 	}
-	g, e := prepareGenesis(context.Background(), d.Protocol)
+	g, e := prepareGenesis(context.Background(), d.Protocol, body)
 	if e != nil {
 		return nil, e
 	}
-	store := &MemoryStore{owner: core.NewLedgerIdentity(), p: d.Protocol, policy: policy, head: g.ID, blocks: map[core.ID][]byte{g.ID: g.Block}, states: map[core.ID]map[string][]byte{g.ID: g.State}, roots: map[core.ID]core.Commitment{g.ID: g.Root}, transactions: map[core.ID]storedTransaction{}, receipts: map[core.ID]core.Receipt{}}
+	store := &MemoryStore{body: body, owner: core.NewLedgerIdentity(), p: d.Protocol, policy: policy, head: g.ID, blocks: map[core.ID][]byte{g.ID: g.Block}, states: map[core.ID]map[string][]byte{g.ID: g.State}, roots: map[core.ID]core.Commitment{g.ID: g.Root}, transactions: map[core.ID]storedTransaction{}, receipts: map[core.ID]core.Receipt{}}
 	if policy != nil {
 		p := d.Protocol.(chaincap.BranchProtocol)
-		n, e := branchGenesis(context.Background(), p, policy, g)
+		n, e := branchGenesis(context.Background(), p, policy, g, body)
 		if e != nil {
 			return nil, e
 		}
@@ -77,7 +85,7 @@ func (s *MemoryStore) Block(ctx context.Context, id core.ID) (core.Block, error)
 	if !ok {
 		return nil, core.ErrNotFound
 	}
-	return decodeStoredBlock(s.p, data, id)
+	return decodeAvailableBlock(ctx, s.p, data, id, s.body)
 }
 func (s *MemoryStore) Receipt(ctx context.Context, id core.ID) (core.Receipt, error) {
 	if e := ctx.Err(); e != nil {
@@ -136,7 +144,7 @@ func (s *MemoryStore) Commit(ctx context.Context, parent core.ID, b core.Block, 
 	if head != parent {
 		return core.ErrConflict
 	}
-	v, e := prepareCommit(ctx, s.p, s, parent, b, r)
+	v, e := prepareCommit(ctx, s.p, s, parent, b, r, s.body)
 	if e != nil {
 		return e
 	}

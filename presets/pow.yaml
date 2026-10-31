@@ -43,10 +43,11 @@ plugins:
   importer:
     use: importer/branch
     deps: {protocol: protocol, ledger: ledger, executor: executor, pool: pool}
+  router: {use: message/router, deps: {network: network}}
   replication:
     use: sync/chain
     config: {interval: 500ms}
-    deps: {protocol: protocol, ledger: ledger, pool: pool, network: network, importer: importer}
+    deps: {protocol: protocol, ledger: ledger, pool: pool, network: network, router: router, importer: importer}
   consensus:
     use: consensus/pow
     config: {interval: 1s}
@@ -61,4 +62,4 @@ plugins:
   node:
     use: node/default
     config: {shutdownTimeout: 5s}
-    deps: {ledger: ledger, host: host, consensus: consensus, resources: [network, api], workers: [api]}
+    deps: {ledger: ledger, host: host, consensus: consensus, resources: [network, router, api], workers: [api]}

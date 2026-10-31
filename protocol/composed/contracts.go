@@ -21,6 +21,7 @@ type Header struct {
 type Envelope struct {
 	Header       Header
 	Transactions [][]byte
+	References   [][]byte `json:",omitempty"`
 	Proof        []byte
 }
 

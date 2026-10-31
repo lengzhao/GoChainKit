@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	bodycap "github.com/lengzhao/GoChainKit/cap/body"
 	chaincap "github.com/lengzhao/GoChainKit/cap/chain"
 	replicationcap "github.com/lengzhao/GoChainKit/cap/replication"
 	"github.com/lengzhao/GoChainKit/core"
@@ -21,10 +22,11 @@ type ImportProtocol interface {
 	Transactions(core.Block) ([]core.Transaction, error)
 }
 type ImportDeps struct {
-	Rules    ImportProtocol        `json:"protocol"`
-	Ledger   chaincap.BranchLedger `json:"ledger"`
-	Executor core.Executor         `json:"executor"`
-	Pool     core.Mempool          `json:"pool"`
+	Materializer bodycap.Materializer  `json:"materializer,omitempty"`
+	Rules        ImportProtocol        `json:"protocol"`
+	Ledger       chaincap.BranchLedger `json:"ledger"`
+	Executor     core.Executor         `json:"executor"`
+	Pool         core.Mempool          `json:"pool"`
 }
 type ImportConfig struct{}
 type branchImporter struct {
@@ -43,11 +45,28 @@ func NewImporter(_ ImportConfig, d ImportDeps) (replicationcap.BlockImporter, er
 	if d.Ledger.LedgerID() == nil {
 		return nil, core.ErrLedgerMismatch
 	}
+	if d.Materializer != nil {
+		if e := core.RequireCompatible(d.Rules.Protocol(), d.Materializer); e != nil {
+			return nil, e
+		}
+	}
 	return &branchImporter{ImportDeps: d}, nil
 }
 func (p *branchImporter) Protocol() core.ProtocolDescriptor { return p.ImportDeps.Rules.Protocol() }
 func (p *branchImporter) LedgerID() *core.LedgerIdentity    { return p.Ledger.LedgerID() }
 func (p *branchImporter) Import(ctx context.Context, b core.Block, r *core.ExecutionResult) (returnErr error) {
+	if p.Materializer != nil {
+		if _, err := p.Rules.Transactions(b); err != nil {
+			var e error
+			b, e = p.Materializer.Materialize(ctx, b)
+			if e != nil {
+				if errors.Is(e, bodycap.ErrUnavailable) {
+					return localService(e)
+				}
+				return e
+			}
+		}
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	parent, e := p.Rules.Parent(b)

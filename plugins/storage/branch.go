@@ -25,8 +25,8 @@ type branchPlan struct {
 	Receipts           map[core.ID]core.Receipt
 }
 
-func branchGenesis(ctx context.Context, p chaincap.BranchProtocol, policy chaincap.BranchPolicy, g preparedCommit) (branchNode, error) {
-	b, e := decodeStoredBlock(p, g.Block, g.ID)
+func branchGenesis(ctx context.Context, p chaincap.BranchProtocol, policy chaincap.BranchPolicy, g preparedCommit, access ...*bodyAccess) (branchNode, error) {
+	b, e := decodeAvailableBlock(ctx, p, g.Block, g.ID, access...)
 	if e != nil {
 		return branchNode{}, e
 	}
@@ -37,11 +37,11 @@ func branchGenesis(ctx context.Context, p chaincap.BranchProtocol, policy chainc
 	if parent != "" {
 		return branchNode{}, fmt.Errorf("genesis must have no parent")
 	}
-	score, e := policy.Score(ctx, genesisHistory{p, b}, b, nil)
+	score, e := policy.Score(ctx, genesisHistory{p: p, b: b, body: firstBody(access)}, b, nil)
 	if e != nil {
 		return branchNode{}, e
 	}
-	final, e := policy.Finalized(ctx, genesisHistory{p, b}, b)
+	final, e := policy.Finalized(ctx, genesisHistory{p: p, b: b, body: firstBody(access)}, b)
 	if e != nil {
 		return branchNode{}, e
 	}
@@ -50,7 +50,7 @@ func branchGenesis(ctx context.Context, p chaincap.BranchProtocol, policy chainc
 	}
 	return branchNode{Score: bytes.Clone(score), Finalized: final, Prepared: g}, nil
 }
-func branchCandidate(ctx context.Context, p chaincap.BranchProtocol, policy chaincap.BranchPolicy, chain core.LedgerReader, parent core.ID, b core.Block, r core.ExecutionResult, graph map[core.ID]branchNode) (branchNode, error) {
+func branchCandidate(ctx context.Context, p chaincap.BranchProtocol, policy chaincap.BranchPolicy, chain core.LedgerReader, parent core.ID, b core.Block, r core.ExecutionResult, graph map[core.ID]branchNode, access ...*bodyAccess) (branchNode, error) {
 	ancestor, ok := graph[parent]
 	if !ok {
 		return branchNode{}, core.ErrNotFound
@@ -62,7 +62,7 @@ func branchCandidate(ctx context.Context, p chaincap.BranchProtocol, policy chai
 	if link != parent {
 		return branchNode{}, core.ErrConflict
 	}
-	v, e := prepareCommit(ctx, p, chain, parent, b, r)
+	v, e := prepareCommit(ctx, p, chain, parent, b, r, access...)
 	if e != nil {
 		return branchNode{}, e
 	}
@@ -118,13 +118,13 @@ func branchPath(graph map[core.ID]branchNode, tip core.ID) ([]core.ID, error) {
 	}
 	return path, nil
 }
-func planBranch(ctx context.Context, p chaincap.BranchProtocol, policy chaincap.BranchPolicy, chain core.ChainStore, graph map[core.ID]branchNode, old, id core.ID) (branchPlan, error) {
+func planBranch(ctx context.Context, p chaincap.BranchProtocol, policy chaincap.BranchPolicy, chain core.ChainStore, graph map[core.ID]branchNode, old, id core.ID, access ...*bodyAccess) (branchPlan, error) {
 	out := branchPlan{Head: old}
-	oldBlock, e := decodeStoredBlock(p, graph[old].Prepared.Block, old)
+	oldBlock, e := decodeAvailableBlock(ctx, p, graph[old].Prepared.Block, old, access...)
 	if e != nil {
 		return out, e
 	}
-	newBlock, e := decodeStoredBlock(p, graph[id].Prepared.Block, id)
+	newBlock, e := decodeAvailableBlock(ctx, p, graph[id].Prepared.Block, id, access...)
 	if e != nil {
 		return out, e
 	}
@@ -197,17 +197,17 @@ func planBranch(ctx context.Context, p chaincap.BranchProtocol, policy chaincap.
 	}
 	return out, nil
 }
-func branchChange(p chaincap.BranchProtocol, graph map[core.ID]branchNode, old core.ID, plan branchPlan) (chaincap.BranchChange, error) {
+func branchChange(ctx context.Context, p chaincap.BranchProtocol, graph map[core.ID]branchNode, old core.ID, plan branchPlan, access ...*bodyAccess) (chaincap.BranchChange, error) {
 	out := chaincap.BranchChange{OldHead: old, NewHead: plan.Head}
 	for _, id := range plan.Detached {
-		b, e := decodeStoredBlock(p, graph[id].Prepared.Block, id)
+		b, e := decodeAvailableBlock(ctx, p, graph[id].Prepared.Block, id, access...)
 		if e != nil {
 			return out, e
 		}
 		out.Detached = append(out.Detached, b)
 	}
 	for _, id := range plan.Attached {
-		b, e := decodeStoredBlock(p, graph[id].Prepared.Block, id)
+		b, e := decodeAvailableBlock(ctx, p, graph[id].Prepared.Block, id, access...)
 		if e != nil {
 			return out, e
 		}
@@ -219,7 +219,7 @@ func branchChange(p chaincap.BranchProtocol, graph map[core.ID]branchNode, old c
 // prepareBranchImport shares validation and planning while backends retain ownership
 // of their atomic commit and head compare-and-swap. Published branch records are
 // immutable; loading ancestors on demand needs no lock across policy callbacks.
-func prepareBranchImport(ctx context.Context, p chaincap.BranchProtocol, policy chaincap.BranchPolicy, chain core.LedgerReader, head, parent core.ID, b core.Block, r core.ExecutionResult, linear bool, load func(core.ID) (branchNode, error)) (branchNode, branchPlan, chaincap.BranchChange, error) {
+func prepareBranchImport(ctx context.Context, p chaincap.BranchProtocol, policy chaincap.BranchPolicy, chain core.LedgerReader, head, parent core.ID, b core.Block, r core.ExecutionResult, linear bool, load func(core.ID) (branchNode, error), access ...*bodyAccess) (branchNode, branchPlan, chaincap.BranchChange, error) {
 	var empty branchNode
 	var plan branchPlan
 	var change chaincap.BranchChange
@@ -256,16 +256,16 @@ func prepareBranchImport(ctx context.Context, p chaincap.BranchProtocol, policy 
 			tip = n.Parent
 		}
 	}
-	n, e := branchCandidate(ctx, p, policy, chain, parent, b, r, graph)
+	n, e := branchCandidate(ctx, p, policy, chain, parent, b, r, graph, access...)
 	if e != nil {
 		return empty, plan, change, e
 	}
 	graph[b.ID()] = n
-	plan, e = planBranch(ctx, p, policy, chain, graph, head, b.ID())
+	plan, e = planBranch(ctx, p, policy, chain, graph, head, b.ID(), access...)
 	if e != nil {
 		return empty, plan, change, e
 	}
-	change, e = branchChange(p, graph, head, plan)
+	change, e = branchChange(ctx, p, graph, head, plan, access...)
 	return n, plan, change, e
 }
 
@@ -289,7 +289,7 @@ func (s *MemoryStore) importBlock(ctx context.Context, parent core.ID, b core.Bl
 		}
 		return n, nil
 	}
-	n, plan, change, e := prepareBranchImport(ctx, p, s.policy, s, head, parent, b, r, linear, load)
+	n, plan, change, e := prepareBranchImport(ctx, p, s.policy, s, head, parent, b, r, linear, load, s.body)
 	if e != nil {
 		return change, e
 	}
@@ -341,7 +341,7 @@ func (s *KVStore) importBlock(ctx context.Context, parent core.ID, b core.Block,
 		e := s.view(ctx, func(tx capstorage.Reader) error { return get(tx, "branches", []byte(id), &n) })
 		return n, e
 	}
-	n, plan, change, e := prepareBranchImport(ctx, p, s.policy, s, head, parent, b, r, linear, load)
+	n, plan, change, e := prepareBranchImport(ctx, p, s.policy, s, head, parent, b, r, linear, load, s.body)
 	if e != nil {
 		return change, e
 	}
@@ -453,7 +453,7 @@ func (s *KVStore) validateBranches(ctx context.Context, p chaincap.BranchProtoco
 	if _, ok := graph[head]; !ok {
 		return fmt.Errorf("missing canonical branch")
 	}
-	expectedGenesis, e := branchGenesis(ctx, p, s.policy, g)
+	expectedGenesis, e := branchGenesis(ctx, p, s.policy, g, s.body)
 	if e != nil {
 		return e
 	}
@@ -487,7 +487,7 @@ func (s *KVStore) validateBranches(ctx context.Context, p chaincap.BranchProtoco
 		if e != nil || link != n.Parent {
 			return nil, fmt.Errorf("branch parent mismatch")
 		}
-		prepared, e := prepareCommit(ctx, p, s, n.Parent, b, n.Prepared.Result)
+		prepared, e := prepareCommit(ctx, p, s, n.Parent, b, n.Prepared.Result, s.body)
 		if e != nil {
 			return nil, e
 		}
@@ -525,7 +525,7 @@ func (s *KVStore) validateBranches(ctx context.Context, p chaincap.BranchProtoco
 		if !bytes.Equal(score, n.Score) {
 			return nil, fmt.Errorf("branch score mismatch")
 		}
-		candidate, e := branchCandidate(ctx, p, s.policy, s, n.Parent, b, n.Prepared.Result, graph)
+		candidate, e := branchCandidate(ctx, p, s.policy, s, n.Parent, b, n.Prepared.Result, graph, s.body)
 		if e != nil {
 			return nil, e
 		}
@@ -542,7 +542,7 @@ func (s *KVStore) validateBranches(ctx context.Context, p chaincap.BranchProtoco
 		}
 	}
 	for id := range graph {
-		plan, e := planBranch(ctx, p, s.policy, s, graph, head, id)
+		plan, e := planBranch(ctx, p, s.policy, s, graph, head, id, s.body)
 		if e != nil {
 			return e
 		}

@@ -22,6 +22,8 @@
 - 事务型 KV 后端：通用账本通过 Deps 选择内存或 Bolt；密钥保存与网络身份独立装配，支持加密文件及环境口令来源。
 - 版本化 Ed25519 签名/验签、静态成员、PoA 轮值规则、独立封印与选链插件；观察节点无需共识私钥。
 - 有界执行局部 Journal、嵌套 LIFO 回滚和窄快照适配，为独立 Runtime 提供 KV 隔离基础。
+- 消息 Router、独立交易正文归档、composed 可选引用体与本地/远端补齐，覆盖分支恢复。
+- 可选锚定高度查询及 HTTP 路由，支持历史和侧链头。
 
 ## 开发
 
@@ -47,6 +49,8 @@ API 默认位于本机 8081–8083，钱包命令为 `gochainkit-wallet`。启�
 
 ## 设计文档
 
+- [当前 TODO 与推进顺序](TODO.md)
+- [消息路由、引用式正文与锚定高度查询](docs/reference-bodies.md)
 - [架构草图](docs/plans/2026-10-17-gochainkit-design.md)
 - [编程与模块接口规范](docs/development-conventions.md)
 - [实现计划](docs/plans/2026-10-17-gochainkit-implementation.md)
