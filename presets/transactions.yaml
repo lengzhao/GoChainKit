@@ -1,0 +1,12 @@
+root: tools
+plugins:
+  btc:
+    use: transactions/bitcoin
+    config: {maxTransactionBytes: 4000000}
+  eth:
+    use: transactions/ethereum
+    config: {chainID: "1337", maxTransactionBytes: 1048576}
+  tools:
+    use: service/transactions
+    config: {listen: "127.0.0.1:8090", maxRequestBytes: 12582912, maxConcurrent: 8}
+    deps: {bitcoin: btc, ethereum: eth}

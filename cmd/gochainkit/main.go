@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"github.com/lengzhao/GoChainKit/assembly"
-	httpcap "github.com/lengzhao/GoChainKit/cap/http"
 	networkcap "github.com/lengzhao/GoChainKit/cap/network"
 
 	_ "github.com/lengzhao/GoChainKit/plugins/all"
@@ -45,13 +44,12 @@ func run() error {
 		return err
 	}
 	networks := map[string]networkcap.Network{}
-	apis := map[string]httpcap.Server{}
+	apis := map[string]interface{ Addresses() []string }{}
 	for _, instance := range result.Instances {
-		if server, ok := instance.Value.(httpcap.Server); ok {
-			apis[instance.ID] = server
-		}
 		if network, ok := instance.Value.(networkcap.Network); ok {
 			networks[instance.ID] = network
+		} else if server, ok := instance.Value.(interface{ Addresses() []string }); ok {
+			apis[instance.ID] = server
 		}
 	}
 	if len(networks) == 0 && len(apis) == 0 {

@@ -1,0 +1,75 @@
+# Native evm execution on custom PoW blocks; development genesis key is 01 repeated 32 times.
+root: node
+plugins:
+  model:
+    use: model/evm
+    config:
+      network: native-evm
+      chainID: "1337"
+      baseFee: "1"
+      gasLimit: 30000000
+      allocations:
+        "0x1a642f0e3c3af545e7acbd38b07251b3990914f1": {balance: "100000000000000000000"}
+  rule:
+    use: rules/pow
+    config: {retargetInterval: 20, targetSpacing: 10, initialReward: 0, halvingInterval: 100}
+  protocol:
+    use: protocol/composed-pow
+    config: {network: native-evm, genesisTime: 1700000000, producer: '0300000000000000000000000000000000000000000000000000000000000000'}
+    deps: {model: model, rule: rule, choice: rule}
+  backend:
+    use: backend/bolt
+    config: {path: data/native-evm-chain.db}
+  ledger:
+    use: storage/kv
+    deps: {protocol: protocol, backend: backend}
+  pool:
+    use: mempool/memory
+    config: {maxTransactions: 1000, maxBytes: 16777216}
+    deps: {protocol: protocol}
+  executor:
+    use: executor/composed
+    deps: {protocol: protocol, history: ledger}
+  selector:
+    use: selector/fifo
+    deps: {protocol: protocol}
+  builder:
+    use: builder/basic
+    config: {maxTransactionBytes: 1048576}
+    deps: {protocol: protocol, ledger: ledger, pool: pool, executor: executor, selector: selector}
+  host:
+    use: node/coordinator
+    deps: {protocol: protocol, ledger: ledger, builder: builder, executor: executor, pool: pool}
+  key-secret: {use: secret/env, config: {environment: GOCHAINKIT_KEYSTORE_PASSWORD}}
+  keys: {use: keystore/encrypted-file, config: {directory: data/native-evm-keys}, deps: {secret: key-secret}}
+  identity: {use: identity/libp2p, config: {keyID: p2p}, deps: {store: keys}}
+  network:
+    use: network/libp2p
+    config: {listen: [/ip4/127.0.0.1/tcp/19501], seeds: []}
+    deps: {protocol: protocol, identity: identity}
+  importer:
+    use: importer/branch
+    deps: {protocol: protocol, ledger: ledger, executor: executor, pool: pool}
+  router: {use: message/router, deps: {network: network}}
+  replication:
+    use: sync/chain
+    config: {interval: 500ms}
+    deps: {protocol: protocol, ledger: ledger, pool: pool, network: network, router: router, importer: importer}
+  consensus:
+    use: consensus/pow
+    config: {interval: 1s}
+    deps: {protocol: protocol, ledger: ledger, builder: builder, importer: importer, replication: replication}
+  api-query:
+    use: api/query
+    deps: {protocol: protocol, ledger: ledger, pool: pool}
+  api-model:
+    use: api/evm
+    deps: {protocol: protocol, query: api-query}
+  api:
+    use: api/http
+    config: {listen: '127.0.0.1:8092'}
+    deps: {query: api-query, network: network, modules: [api-model]}
+  node:
+    use: node/default
+    config: {shutdownTimeout: 5s}
+    deps: {ledger: ledger, host: host, consensus: consensus, resources: [network, router, api], workers: [api]}

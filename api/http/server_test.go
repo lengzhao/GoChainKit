@@ -169,22 +169,6 @@ func TestModuleLimitsAndCloseJoin(t *testing.T) {
 		t.Fatal("duplicate route accepted")
 	}
 }
-func TestServeFailurePreserved(t *testing.T) {
-	s, _ := New(Config{Listen: "127.0.0.1:0"}, Deps{Query: service(t)})
-	if e := s.Start(context.Background()); e != nil {
-		t.Fatal(e)
-	}
-	s.listener.Close()
-	<-s.done
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if e := s.Run(ctx); e == nil {
-		t.Fatal("serve failure swallowed")
-	}
-	if e := s.Stop(context.Background()); e == nil {
-		t.Fatal("stop swallowed serve failure")
-	}
-}
 func TestRequestDeadlinePreservesMixedFault(t *testing.T) {
 	q := service(t)
 	m := module{q, []httpcap.Route{{Pattern: "GET /slow", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

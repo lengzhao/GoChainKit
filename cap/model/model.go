@@ -30,6 +30,24 @@ type Engine interface {
 	Execute(context.Context, core.StateReader, []core.Transaction) (Transition, error)
 }
 
+// BlockHashContext exposes only the preceding 256 ancestors of the candidate.
+// Current/future/older heights return an empty ID; history faults remain errors.
+type BlockHashContext interface {
+	BlockHash(context.Context, uint64) (core.ID, error)
+}
+
+// MedianTimeContext returns the median timestamp of up to 11 blocks ending at
+// the execution parent, independently of candidate time and local wall clocks.
+type MedianTimeContext interface {
+	MedianTimePast(context.Context) (int64, error)
+}
+
+// QueryContextProvider constructs read-only execution context at a stored block,
+// using that block's height/time rather than the next proposal's environment.
+type QueryContextProvider interface {
+	QueryContext(context.Context, BlockHistory, core.ID) (ExecutionContext, error)
+}
+
 // ExecutionContext exposes block/history context without prescribing height,
 // balance, validator, fee or parent topology fields on every model. Parent is
 // the execution baseline; additional ancestry remains protocol-defined.
