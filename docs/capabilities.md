@@ -28,7 +28,7 @@
 | `cap/contract` | 合约模型：Runtime、CodeProvider、离线 Compiler、最小 Host | 契约草案，无 VM 实现 |
 | `cap/message` | 同步/投票等消息插件：复用一个 Network handler | 已提供有界 Router，sync 与正文服务通过版本化路由共用 Network |
 | `cap/query` | API 领域服务：交易受理结果、同一视图的交易/回执/链头读取、可选历史高度索引 | 受理与确认查询已接入领域服务、内存及 Bolt；另有可选 query/height 祖先遍历适配器及 api/height 路由（非持久化高度索引） |
-| `cap/http` | 可选 HTTP 服务生命周期与路由贡献能力 | 已接入通用 HTTP 插件、节点监督及 CLI；模型路由按需装配 |
+| `cap/http` | 无账本 Transport、绑定链 owner 的 Server 与路由贡献能力 | `runtime/http` 共用传输运行器；链 API 保留协议/账本检查，模型路由按需装配 |
 | `cap/storage` | 命名空间 KV 事务、独立拥有的数据库句柄与后端打开器 | 通用账本消费，内存/Bolt 后端实现；不包含链规则 |
 | `cap/keystore` | 可选本地机密保存、独占创建与口令来源 | 内存/加密文件实现，libp2p 身份适配消费；不强制 Signer 导出私钥 |
 

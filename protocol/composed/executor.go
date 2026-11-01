@@ -237,3 +237,138 @@ func (h executionHistory) Block(ctx context.Context, id core.ID) (core.Block, er
 }
 func (e executionContext) Height() uint64   { v, _ := Unwrap(e.candidate); return v.Header.Height }
 func (e executionContext) Timestamp() int64 { v, _ := Unwrap(e.candidate); return v.Header.Timestamp }
+
+func (e executionContext) BlockHash(ctx context.Context, height uint64) (core.ID, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	current := e.Height()
+	if height >= current || current-height > 256 {
+		return "", nil
+	}
+	b := e.parent
+	for b != nil {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		v, err := Unwrap(b)
+		if err != nil {
+			return "", err
+		}
+		if v.Header.Height == height {
+			return b.ID(), nil
+		}
+		if v.Header.Height < height || len(v.Header.Parent) == 0 {
+			return "", fmt.Errorf("execution ancestor height mismatch")
+		}
+		next, err := e.previous(ctx, b)
+		if err != nil {
+			return "", err
+		}
+		n, err := Unwrap(next)
+		if err != nil {
+			return "", err
+		}
+		if n.Header.Height+1 != v.Header.Height {
+			return "", fmt.Errorf("execution ancestor discontinuity")
+		}
+		b = next
+	}
+	return "", fmt.Errorf("execution ancestor unavailable")
+}
+
+func (e executionContext) MedianTimePast(ctx context.Context) (int64, error) {
+	times := make([]int64, 0, 11)
+	b := e.parent
+	for i := 0; i < 11 && b != nil; i++ {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+		v, err := Unwrap(b)
+		if err != nil {
+			return 0, err
+		}
+		times = append(times, v.Header.Timestamp)
+		if v.Header.Height == 0 {
+			break
+		}
+		b, err = e.previous(ctx, b)
+		if err != nil {
+			return 0, err
+		}
+	}
+	if len(times) == 0 {
+		return 0, fmt.Errorf("execution parent required")
+	}
+	sort.Slice(times, func(i, j int) bool { return times[i] < times[j] })
+	return times[len(times)/2], nil
+}
+
+// previous follows a known ancestor edge. It may use the underlying read-only
+// chain directly because the caller cannot choose an arbitrary side-branch ID.
+func (e executionContext) previous(ctx context.Context, b core.Block) (core.Block, error) {
+	v, err := Unwrap(b)
+	if err != nil {
+		return nil, err
+	}
+	if v.Header.Height == 0 || len(v.Header.Parent) == 0 {
+		return nil, fmt.Errorf("execution ancestor unavailable")
+	}
+	id := core.ID(string(v.Header.Parent))
+	var next core.Block
+	if h, ok := e.history.(executionHistory); ok {
+		next, err = h.chain.Block(ctx, id)
+	} else {
+		next, err = e.history.Block(ctx, id)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if next == nil || next.ID() != id {
+		return nil, fmt.Errorf("execution ancestor identity mismatch")
+	}
+	n, err := Unwrap(next)
+	if err != nil {
+		return nil, err
+	}
+	if n.Header.Height != v.Header.Height-1 {
+		return nil, fmt.Errorf("execution ancestor discontinuity")
+	}
+	return next, nil
+}
+
+// QueryContext binds read-only model calls to an existing block. The history is
+// narrowed to that anchor, while BLOCKHASH starts from its actual predecessor.
+func (p *Protocol) QueryContext(ctx context.Context, history model.BlockHistory, anchor core.ID) (model.ExecutionContext, error) {
+	if history == nil {
+		return nil, fmt.Errorf("query history required")
+	}
+	if err := core.RequireCompatible(p.Protocol(), history); err != nil {
+		return nil, err
+	}
+	b, err := history.Block(ctx, anchor)
+	if err != nil {
+		return nil, err
+	}
+	if b == nil || b.ID() != anchor {
+		return nil, fmt.Errorf("query anchor identity mismatch")
+	}
+	v, err := Unwrap(b)
+	if err != nil {
+		return nil, err
+	}
+	e := executionContext{candidate: b, history: executionHistory{chain: queryHistoryChain{history}, parent: anchor}, protocol: p}
+	if v.Header.Height > 0 {
+		e.parent, err = e.previous(ctx, b)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return e, nil
+}
+
+type queryHistoryChain struct{ model.BlockHistory }
+
+func (queryHistoryChain) Receipt(context.Context, core.ID) (core.Receipt, error) {
+	return core.Receipt{}, core.ErrNotFound
+}

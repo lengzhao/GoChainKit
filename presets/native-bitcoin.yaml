@@ -1,0 +1,73 @@
+# Native bitcoin execution on custom PoW blocks; development genesis key is 01 repeated 32 times.
+root: node
+plugins:
+  model:
+    use: model/bitcoin
+    config:
+      network: native-bitcoin
+      genesisTime: 1700000000
+      allocations:
+        - {value: "100000000", script: "IQMbhMVWexJkQJldPtWqugVl1x4YNGBIGf+cF/Xp1d0Hj6w="}
+  rule:
+    use: rules/pow
+    config: {retargetInterval: 20, targetSpacing: 10, initialReward: 0, halvingInterval: 100}
+  protocol:
+    use: protocol/composed-pow
+    config: {network: native-bitcoin, genesisTime: 1700000000, producer: '0300000000000000000000000000000000000000000000000000000000000000'}
+    deps: {model: model, rule: rule, choice: rule}
+  backend:
+    use: backend/bolt
+    config: {path: data/native-bitcoin-chain.db}
+  ledger:
+    use: storage/kv
+    deps: {protocol: protocol, backend: backend}
+  pool:
+    use: mempool/memory
+    config: {maxTransactions: 1000, maxBytes: 16777216}
+    deps: {protocol: protocol}
+  executor:
+    use: executor/composed
+    deps: {protocol: protocol, history: ledger}
+  selector:
+    use: selector/fifo
+    deps: {protocol: protocol}
+  builder:
+    use: builder/basic
+    config: {maxTransactionBytes: 1048576}
+    deps: {protocol: protocol, ledger: ledger, pool: pool, executor: executor, selector: selector}
+  host:
+    use: node/coordinator
+    deps: {protocol: protocol, ledger: ledger, builder: builder, executor: executor, pool: pool}
+  key-secret: {use: secret/env, config: {environment: GOCHAINKIT_KEYSTORE_PASSWORD}}
+  keys: {use: keystore/encrypted-file, config: {directory: data/native-bitcoin-keys}, deps: {secret: key-secret}}
+  identity: {use: identity/libp2p, config: {keyID: p2p}, deps: {store: keys}}
+  network:
+    use: network/libp2p
+    config: {listen: [/ip4/127.0.0.1/tcp/19401], seeds: []}
+    deps: {protocol: protocol, identity: identity}
+  importer:
+    use: importer/branch
+    deps: {protocol: protocol, ledger: ledger, executor: executor, pool: pool}
+  router: {use: message/router, deps: {network: network}}
+  replication:
+    use: sync/chain
+    config: {interval: 500ms}
+    deps: {protocol: protocol, ledger: ledger, pool: pool, network: network, router: router, importer: importer}
+  consensus:
+    use: consensus/pow
+    config: {interval: 1s}
+    deps: {protocol: protocol, ledger: ledger, builder: builder, importer: importer, replication: replication}
+  api-query:
+    use: api/query
+    deps: {protocol: protocol, ledger: ledger, pool: pool}
+  api-model:
+    use: api/native-bitcoin
+    deps: {protocol: protocol, query: api-query}
+  api:
+    use: api/http
+    config: {listen: '127.0.0.1:8091'}
+    deps: {query: api-query, network: network, modules: [api-model]}
+  node:
+    use: node/default
+    config: {shutdownTimeout: 5s}
+    deps: {ledger: ledger, host: host, consensus: consensus, resources: [network, router, api], workers: [api]}

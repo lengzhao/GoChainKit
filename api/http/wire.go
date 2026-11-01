@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"github.com/lengzhao/GoChainKit/api"
 	"github.com/lengzhao/GoChainKit/core"
 	"net/http"
@@ -94,5 +93,3 @@ func WriteError(w http.ResponseWriter, e error) {
 func writeError(w http.ResponseWriter, status int, code string) {
 	WriteJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": http.StatusText(status)}})
 }
-
-var errResponseLimit = errors.New("response limit exceeded")

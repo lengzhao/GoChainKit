@@ -7,12 +7,18 @@ import (
 	"net/http"
 )
 
-type Server interface {
+// Transport is a bounded HTTP runtime independent of protocol and ledger owners.
+type Transport interface {
 	core.Lifecycle
-	core.ProtocolBound
-	core.LedgerBound
 	Run(context.Context) error
 	Addresses() []string
+}
+
+// Server additionally binds a chain API transport to one protocol/ledger owner.
+type Server interface {
+	Transport
+	core.ProtocolBound
+	core.LedgerBound
 }
 
 // Route patterns use net/http ServeMux method patterns. Providers must not start

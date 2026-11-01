@@ -4,6 +4,8 @@ package all
 
 import (
 	_ "github.com/lengzhao/GoChainKit/plugins/api/account"
+	_ "github.com/lengzhao/GoChainKit/plugins/api/bitcoin"
+	_ "github.com/lengzhao/GoChainKit/plugins/api/evm"
 	_ "github.com/lengzhao/GoChainKit/plugins/api/height"
 	_ "github.com/lengzhao/GoChainKit/plugins/api/http"
 	_ "github.com/lengzhao/GoChainKit/plugins/api/query"
@@ -26,8 +28,11 @@ import (
 	_ "github.com/lengzhao/GoChainKit/plugins/replication"
 	_ "github.com/lengzhao/GoChainKit/plugins/secret"
 	_ "github.com/lengzhao/GoChainKit/plugins/selector"
+	_ "github.com/lengzhao/GoChainKit/plugins/service/transactions"
 	_ "github.com/lengzhao/GoChainKit/plugins/signer"
 	_ "github.com/lengzhao/GoChainKit/plugins/state/journal"
 	_ "github.com/lengzhao/GoChainKit/plugins/storage"
+	_ "github.com/lengzhao/GoChainKit/plugins/transactions/bitcoin"
+	_ "github.com/lengzhao/GoChainKit/plugins/transactions/ethereum"
 	_ "github.com/lengzhao/GoChainKit/plugins/validator"
 )
